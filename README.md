@@ -12,9 +12,9 @@ docker compose up -d
 
 Useful local URLs and credentials:
 
-- PostgreSQL: `localhost:5432`, database `weezzy`, user `weezzy`, password `weezzy_dev_password`
-- Redis: `localhost:6379`
-- pgAdmin: `http://localhost:5050`, email `admin@weezzy.local`, password `admin`
+- PostgreSQL: `localhost:5433`, database `weezzy`, user `weezzy`, password `weezzy_dev_password`
+- Redis: `localhost:6380`
+- pgAdmin: `http://localhost:5050`, email `admin@weezzy.dev`, password `admin`
 
 Stop containers:
 

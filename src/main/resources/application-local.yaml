@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/weezzy
+    url: jdbc:postgresql://localhost:5433/weezzy
     username: weezzy
     password: weezzy_dev_password
   flyway:
