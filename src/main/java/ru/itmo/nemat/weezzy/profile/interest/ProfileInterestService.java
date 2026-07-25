@@ -1,10 +1,11 @@
-package ru.itmo.nemat.weezzy.profile;
+package ru.itmo.nemat.weezzy.profile.interest;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.nemat.weezzy.interest.Interest;
 import ru.itmo.nemat.weezzy.interest.InterestService;
+import ru.itmo.nemat.weezzy.profile.ProfileService;
 
 import java.util.List;
 import java.util.UUID;

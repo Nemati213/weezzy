@@ -46,10 +46,11 @@ class RecommendationControllerTests {
 	}
 
 	@Test
-	void recommendationsUseWeightedSkillsAndInterests() throws Exception {
+	void recommendationsUseWeightedSkillsInterestsAndGoals() throws Exception {
 		String source = createProfile("Recommendation Source");
 		String alice = createProfile("Recommendation Alice");
 		String timur = createProfile("Recommendation Timur");
+		String diana = createProfile("Recommendation Diana");
 		String bob = createProfile("Recommendation Bob");
 
 		String java = createSkill("Recommendation Java");
@@ -57,11 +58,13 @@ class RecommendationControllerTests {
 		String python = createSkill("Recommendation Python");
 		String startups = createInterest("Recommendation Startups");
 		String hackathons = createInterest("Recommendation Hackathons");
+		String teamSearch = createGoal("RECOMMENDATION_TEAM_SEARCH", "Recommendation Team Search");
 
 		addSkill(source, java);
 		addSkill(source, spring);
 		addInterest(source, startups);
 		addInterest(source, hackathons);
+		addGoal(source, teamSearch);
 
 		addSkill(alice, java);
 		addInterest(alice, startups);
@@ -69,6 +72,8 @@ class RecommendationControllerTests {
 
 		addSkill(timur, java);
 		addSkill(timur, spring);
+
+		addGoal(diana, teamSearch);
 
 		addSkill(bob, python);
 
@@ -79,9 +84,14 @@ class RecommendationControllerTests {
 				.andExpect(jsonPath("$[0].matchedSkills[0]").value("Recommendation Java"))
 				.andExpect(jsonPath("$[0].matchedInterests[0]").value("Recommendation Hackathons"))
 				.andExpect(jsonPath("$[0].matchedInterests[1]").value("Recommendation Startups"))
+				.andExpect(jsonPath("$[0].matchedGoals").isEmpty())
 				.andExpect(jsonPath("$[1].profile.displayName").value("Recommendation Timur"))
 				.andExpect(jsonPath("$[1].score").value(6))
 				.andExpect(jsonPath("$[1].matchedInterests").isEmpty())
+				.andExpect(jsonPath("$[1].matchedGoals").isEmpty())
+				.andExpect(jsonPath("$[2].profile.displayName").value("Recommendation Diana"))
+				.andExpect(jsonPath("$[2].score").value(5))
+				.andExpect(jsonPath("$[2].matchedGoals[0]").value("Recommendation Team Search"))
 				.andExpect(content().string(not(containsString("Recommendation Bob"))))
 				.andExpect(content().string(not(containsString("Recommendation Source"))));
 	}
@@ -101,7 +111,27 @@ class RecommendationControllerTests {
 				.andExpect(jsonPath("$[0].score").value(2))
 				.andExpect(jsonPath("$[0].matchedSkills").isEmpty())
 				.andExpect(jsonPath("$[0].matchedInterests[0]")
-						.value("Recommendation Only Interests Open Source"));
+						.value("Recommendation Only Interests Open Source"))
+				.andExpect(jsonPath("$[0].matchedGoals").isEmpty());
+	}
+
+	@Test
+	void recommendationsWorkWhenProfileHasOnlyGoals() throws Exception {
+		String source = createProfile("Recommendation Only Goals Source");
+		String candidate = createProfile("Recommendation Only Goals Candidate");
+		String goal = createGoal("RECOMMENDATION_ONLY_GOALS", "Recommendation Only Goals Team");
+		addGoal(source, goal);
+		addGoal(candidate, goal);
+
+		mockMvc.perform(get(source + "/recommendations"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].profile.displayName")
+						.value("Recommendation Only Goals Candidate"))
+				.andExpect(jsonPath("$[0].score").value(5))
+				.andExpect(jsonPath("$[0].matchedSkills").isEmpty())
+				.andExpect(jsonPath("$[0].matchedInterests").isEmpty())
+				.andExpect(jsonPath("$[0].matchedGoals[0]")
+						.value("Recommendation Only Goals Team"));
 	}
 
 	@Test
@@ -173,6 +203,22 @@ class RecommendationControllerTests {
 				.getHeader("Location");
 	}
 
+	private String createGoal(String code, String name) throws Exception {
+		return mockMvc.perform(post("/api/goals")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "code": "%s",
+								  "name": "%s",
+								  "description": "Created for recommendation tests"
+								}
+								""".formatted(code, name)))
+				.andExpect(status().isCreated())
+				.andReturn()
+				.getResponse()
+				.getHeader("Location");
+	}
+
 	private void addSkill(String profileLocation, String skillLocation) throws Exception {
 		mockMvc.perform(post(profileLocation + "/skills/" + idFromLocation(skillLocation)))
 				.andExpect(status().isCreated());
@@ -180,6 +226,11 @@ class RecommendationControllerTests {
 
 	private void addInterest(String profileLocation, String interestLocation) throws Exception {
 		mockMvc.perform(post(profileLocation + "/interests/" + idFromLocation(interestLocation)))
+				.andExpect(status().isCreated());
+	}
+
+	private void addGoal(String profileLocation, String goalLocation) throws Exception {
+		mockMvc.perform(post(profileLocation + "/goals/" + idFromLocation(goalLocation)))
 				.andExpect(status().isCreated());
 	}
 

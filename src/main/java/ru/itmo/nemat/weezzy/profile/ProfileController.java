@@ -4,11 +4,16 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import ru.itmo.nemat.weezzy.goal.Goal;
+import ru.itmo.nemat.weezzy.goal.dto.GoalResponse;
 import ru.itmo.nemat.weezzy.interest.Interest;
 import ru.itmo.nemat.weezzy.interest.dto.InterestResponse;
 import ru.itmo.nemat.weezzy.profile.dto.CreateProfileRequest;
 import ru.itmo.nemat.weezzy.profile.dto.ProfileResponse;
 import ru.itmo.nemat.weezzy.profile.dto.UpdateProfileRequest;
+import ru.itmo.nemat.weezzy.profile.goal.ProfileGoalService;
+import ru.itmo.nemat.weezzy.profile.interest.ProfileInterestService;
+import ru.itmo.nemat.weezzy.profile.skill.ProfileSkillService;
 import ru.itmo.nemat.weezzy.skill.Skill;
 import ru.itmo.nemat.weezzy.skill.dto.SkillResponse;
 
@@ -23,6 +28,7 @@ public class ProfileController {
 	private final ProfileService service;
 	private final ProfileSkillService profileSkillService;
 	private final ProfileInterestService profileInterestService;
+	private final ProfileGoalService profileGoalService;
 
 	@PostMapping
 	public ResponseEntity<ProfileResponse> createProfile(@Valid @RequestBody CreateProfileRequest request) {
@@ -93,6 +99,33 @@ public class ProfileController {
 			@PathVariable UUID interestId
 	) {
 		profileInterestService.removeInterest(profileId, interestId);
+		return ResponseEntity.noContent().build();
+	}
+
+	@PostMapping("/{profileId}/goals/{goalId}")
+	public ResponseEntity<GoalResponse> addGoal(
+			@PathVariable UUID profileId,
+			@PathVariable UUID goalId
+	) {
+		Goal goal = profileGoalService.addGoal(profileId, goalId);
+		return ResponseEntity
+				.created(URI.create("/api/profiles/" + profileId + "/goals/" + goalId))
+				.body(GoalResponse.from(goal));
+	}
+
+	@GetMapping("/{profileId}/goals")
+	public ResponseEntity<List<GoalResponse>> getGoals(@PathVariable UUID profileId) {
+		return ResponseEntity.ok(profileGoalService.findGoals(profileId).stream()
+				.map(GoalResponse::from)
+				.toList());
+	}
+
+	@DeleteMapping("/{profileId}/goals/{goalId}")
+	public ResponseEntity<Void> removeGoal(
+			@PathVariable UUID profileId,
+			@PathVariable UUID goalId
+	) {
+		profileGoalService.removeGoal(profileId, goalId);
 		return ResponseEntity.noContent().build();
 	}
 }

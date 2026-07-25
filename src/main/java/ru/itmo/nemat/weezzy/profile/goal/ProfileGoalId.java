@@ -1,4 +1,4 @@
-package ru.itmo.nemat.weezzy.profile;
+package ru.itmo.nemat.weezzy.profile.goal;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -10,7 +10,7 @@ import java.util.UUID;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class ProfileSkillId implements Serializable {
+public class ProfileGoalId implements Serializable {
 	private UUID profileId;
-	private UUID skillId;
+	private UUID goalId;
 }

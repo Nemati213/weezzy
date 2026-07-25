@@ -1,4 +1,4 @@
-package ru.itmo.nemat.weezzy.profile;
+package ru.itmo.nemat.weezzy.profile.interest;
 
 import ru.itmo.nemat.weezzy.common.exception.ConflictException;
 

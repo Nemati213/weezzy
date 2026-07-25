@@ -1,4 +1,4 @@
-package ru.itmo.nemat.weezzy.profile;
+package ru.itmo.nemat.weezzy.profile.goal;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -12,17 +12,17 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "profile_interests")
-@IdClass(ProfileInterestId.class)
+@Table(name = "profile_goals")
+@IdClass(ProfileGoalId.class)
 @Data
-public class ProfileInterest {
+public class ProfileGoal {
 	@Id
 	@Column(nullable = false)
 	private UUID profileId;
 
 	@Id
 	@Column(nullable = false)
-	private UUID interestId;
+	private UUID goalId;
 
 	@Column(nullable = false, updatable = false)
 	private LocalDateTime createdAt;

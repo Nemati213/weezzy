@@ -1,4 +1,4 @@
-package ru.itmo.nemat.weezzy.profile;
+package ru.itmo.nemat.weezzy.profile.interest;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
