@@ -4,6 +4,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import ru.itmo.nemat.weezzy.interest.Interest;
+import ru.itmo.nemat.weezzy.interest.dto.InterestResponse;
 import ru.itmo.nemat.weezzy.profile.dto.CreateProfileRequest;
 import ru.itmo.nemat.weezzy.profile.dto.ProfileResponse;
 import ru.itmo.nemat.weezzy.profile.dto.UpdateProfileRequest;
@@ -20,6 +22,7 @@ import java.util.UUID;
 public class ProfileController {
 	private final ProfileService service;
 	private final ProfileSkillService profileSkillService;
+	private final ProfileInterestService profileInterestService;
 
 	@PostMapping
 	public ResponseEntity<ProfileResponse> createProfile(@Valid @RequestBody CreateProfileRequest request) {
@@ -63,6 +66,33 @@ public class ProfileController {
 	@DeleteMapping("/{profileId}/skills/{skillId}")
 	public ResponseEntity<Void> removeSkill(@PathVariable UUID profileId, @PathVariable UUID skillId) {
 		profileSkillService.removeSkill(profileId, skillId);
+		return ResponseEntity.noContent().build();
+	}
+
+	@PostMapping("/{profileId}/interests/{interestId}")
+	public ResponseEntity<InterestResponse> addInterest(
+			@PathVariable UUID profileId,
+			@PathVariable UUID interestId
+	) {
+		Interest interest = profileInterestService.addInterest(profileId, interestId);
+		return ResponseEntity
+				.created(URI.create("/api/profiles/" + profileId + "/interests/" + interestId))
+				.body(InterestResponse.from(interest));
+	}
+
+	@GetMapping("/{profileId}/interests")
+	public ResponseEntity<List<InterestResponse>> getInterests(@PathVariable UUID profileId) {
+		return ResponseEntity.ok(profileInterestService.findInterests(profileId).stream()
+				.map(InterestResponse::from)
+				.toList());
+	}
+
+	@DeleteMapping("/{profileId}/interests/{interestId}")
+	public ResponseEntity<Void> removeInterest(
+			@PathVariable UUID profileId,
+			@PathVariable UUID interestId
+	) {
+		profileInterestService.removeInterest(profileId, interestId);
 		return ResponseEntity.noContent().build();
 	}
 }

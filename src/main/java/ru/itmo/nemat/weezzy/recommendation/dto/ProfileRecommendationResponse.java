@@ -7,7 +7,8 @@ import java.util.List;
 public record ProfileRecommendationResponse(
 		ProfileResponse profile,
 		int score,
-		List<String> matchedSkills
+		List<String> matchedSkills,
+		List<String> matchedInterests
 ) {
 
 }
