@@ -1,6 +1,7 @@
 package ru.itmo.nemat.weezzy.profile.dto;
 
 import ru.itmo.nemat.weezzy.profile.Profile;
+import ru.itmo.nemat.weezzy.profile.ProfileStatus;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -14,7 +15,8 @@ public record ProfileResponse(
 		String studyProgram,
 		Integer course,
 		LocalDateTime createdAt,
-		LocalDateTime updatedAt
+		LocalDateTime updatedAt,
+		ProfileStatus status
 ) {
 	public static ProfileResponse from(Profile profile) {
 		return new ProfileResponse(
@@ -26,7 +28,8 @@ public record ProfileResponse(
 				profile.getStudyProgram(),
 				profile.getCourse(),
 				profile.getCreatedAt(),
-				profile.getUpdatedAt()
+				profile.getUpdatedAt(),
+				profile.getStatus()
 		);
 	}
 }

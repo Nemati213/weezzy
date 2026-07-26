@@ -7,6 +7,7 @@ import ru.itmo.nemat.weezzy.goal.Goal;
 import ru.itmo.nemat.weezzy.interest.Interest;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
+import ru.itmo.nemat.weezzy.profile.ProfileStatus;
 import ru.itmo.nemat.weezzy.profile.goal.ProfileGoalService;
 import ru.itmo.nemat.weezzy.profile.interest.ProfileInterestService;
 import ru.itmo.nemat.weezzy.profile.skill.ProfileSkillService;
@@ -53,6 +54,7 @@ public class RecommendationService {
 
 		return profileService.findAll().stream()
 				.filter(candidate -> !candidate.getId().equals(profileId))
+				.filter(candidate -> candidate.getStatus().equals(ProfileStatus.ACTIVE))
 				.map(candidate -> recommendationFor(candidate, sourceSkillIds, sourceInterestIds, sourceGoalIds))
 				.filter(recommendation -> recommendation.score() > 0)
 				.sorted(Comparator

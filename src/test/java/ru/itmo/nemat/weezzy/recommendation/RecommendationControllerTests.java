@@ -16,6 +16,7 @@ import org.testcontainers.utility.DockerImageName;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -76,6 +77,10 @@ class RecommendationControllerTests {
 		addGoal(diana, teamSearch);
 
 		addSkill(bob, python);
+		activateProfile(alice);
+		activateProfile(timur);
+		activateProfile(diana);
+		activateProfile(bob);
 
 		mockMvc.perform(get(source + "/recommendations"))
 				.andExpect(status().isOk())
@@ -103,6 +108,7 @@ class RecommendationControllerTests {
 		String interest = createInterest("Recommendation Only Interests Open Source");
 		addInterest(source, interest);
 		addInterest(candidate, interest);
+		activateProfile(candidate);
 
 		mockMvc.perform(get(source + "/recommendations"))
 				.andExpect(status().isOk())
@@ -122,6 +128,7 @@ class RecommendationControllerTests {
 		String goal = createGoal("RECOMMENDATION_ONLY_GOALS", "Recommendation Only Goals Team");
 		addGoal(source, goal);
 		addGoal(candidate, goal);
+		activateProfile(candidate);
 
 		mockMvc.perform(get(source + "/recommendations"))
 				.andExpect(status().isOk())
@@ -142,6 +149,27 @@ class RecommendationControllerTests {
 		mockMvc.perform(get(source + "/recommendations"))
 				.andExpect(status().isOk())
 				.andExpect(content().json("[]"));
+	}
+
+	@Test
+	void recommendationsSkipDraftAndHiddenCandidates() throws Exception {
+		String source = createProfile("Recommendation Status Source");
+		String activeCandidate = createProfile("Recommendation Active Candidate");
+		String draftCandidate = createProfile("Recommendation Draft Candidate");
+		String hiddenCandidate = createProfile("Recommendation Hidden Candidate");
+		String goal = createGoal("RECOMMENDATION_STATUS_GOAL", "Recommendation Status Goal");
+		addGoal(source, goal);
+		addGoal(activeCandidate, goal);
+		addGoal(draftCandidate, goal);
+		addGoal(hiddenCandidate, goal);
+		activateProfile(activeCandidate);
+		hideProfile(hiddenCandidate);
+
+		mockMvc.perform(get(source + "/recommendations"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].profile.displayName").value("Recommendation Active Candidate"))
+				.andExpect(content().string(not(containsString("Recommendation Draft Candidate"))))
+				.andExpect(content().string(not(containsString("Recommendation Hidden Candidate"))));
 	}
 
 	@Test
@@ -232,6 +260,25 @@ class RecommendationControllerTests {
 	private void addGoal(String profileLocation, String goalLocation) throws Exception {
 		mockMvc.perform(post(profileLocation + "/goals/" + idFromLocation(goalLocation)))
 				.andExpect(status().isCreated());
+	}
+
+	private void activateProfile(String profileLocation) throws Exception {
+		updateProfileStatus(profileLocation, "ACTIVE");
+	}
+
+	private void hideProfile(String profileLocation) throws Exception {
+		updateProfileStatus(profileLocation, "HIDDEN");
+	}
+
+	private void updateProfileStatus(String profileLocation, String statusValue) throws Exception {
+		mockMvc.perform(patch(profileLocation)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "status": "%s"
+								}
+								""".formatted(statusValue)))
+				.andExpect(status().isOk());
 	}
 
 	private String idFromLocation(String location) {

@@ -57,6 +57,9 @@ public class ProfileService {
 		if (request.course() != null) {
 			profile.setCourse(request.course());
 		}
+		if (request.status() != null) {
+			profile.setStatus(request.status());
+		}
 		return profileRepository.save(profile);
 	}
 }

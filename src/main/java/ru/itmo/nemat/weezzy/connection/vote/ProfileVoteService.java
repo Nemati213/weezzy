@@ -1,0 +1,53 @@
+package ru.itmo.nemat.weezzy.connection.vote;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import ru.itmo.nemat.weezzy.connection.match.ProfileMatchService;
+import ru.itmo.nemat.weezzy.profile.ProfileService;
+
+import java.util.List;
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+public class ProfileVoteService {
+	private final ProfileVoteRepository repository;
+	private final ProfileService profileService;
+	private final ProfileMatchService matchService;
+
+	@Transactional
+	public ProfileVote vote(UUID sourceProfileId, UUID targetProfileId, ProfileVoteAction action) {
+		if (sourceProfileId.equals(targetProfileId)) {
+			throw new SelfVoteException(sourceProfileId);
+		}
+
+		profileService.findById(sourceProfileId);
+		profileService.findById(targetProfileId);
+
+		ProfileVote vote = repository.findBySourceProfileIdAndTargetProfileId(sourceProfileId, targetProfileId)
+				.orElseGet(() -> {
+					ProfileVote profileVote = new ProfileVote();
+					profileVote.setSourceProfileId(sourceProfileId);
+					profileVote.setTargetProfileId(targetProfileId);
+					return profileVote;
+		});
+		vote.setAction(action);
+
+		ProfileVote savedVote = repository.save(vote);
+		if (action == ProfileVoteAction.LIKE) {
+			repository.findBySourceProfileIdAndTargetProfileId(targetProfileId, sourceProfileId)
+					.filter(reciprocalVote -> reciprocalVote.getAction() == ProfileVoteAction.LIKE)
+					.ifPresent(reciprocalVote -> matchService.create(sourceProfileId, targetProfileId));
+		}
+
+		return savedVote;
+	}
+
+	@Transactional(readOnly = true)
+	public List<ProfileVote> findBySourceProfileId(UUID sourceProfileId) {
+		profileService.findById(sourceProfileId);
+
+		return repository.findBySourceProfileId(sourceProfileId);
+	}
+}

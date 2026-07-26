@@ -69,7 +69,8 @@ class ProfileControllerTests {
 				.andExpect(jsonPath("$.telegram").value("@nemati213"))
 				.andExpect(jsonPath("$.faculty").value("FICT"))
 				.andExpect(jsonPath("$.studyProgram").value("Software Engineering"))
-				.andExpect(jsonPath("$.course").value(2));
+				.andExpect(jsonPath("$.course").value(2))
+				.andExpect(jsonPath("$.status").value("DRAFT"));
 	}
 
 	@Test
@@ -132,7 +133,8 @@ class ProfileControllerTests {
 				.andExpect(jsonPath("$.telegram").value("@fetch_profile"))
 				.andExpect(jsonPath("$.faculty").value("Faculty of Infocommunication Technologies"))
 				.andExpect(jsonPath("$.studyProgram").value("Applied Computer Science"))
-				.andExpect(jsonPath("$.course").value(3));
+				.andExpect(jsonPath("$.course").value(3))
+				.andExpect(jsonPath("$.status").value("DRAFT"));
 	}
 
 	@Test
@@ -200,7 +202,39 @@ class ProfileControllerTests {
 				.andExpect(jsonPath("$.telegram").value("@old_profile"))
 				.andExpect(jsonPath("$.faculty").value("Old Faculty"))
 				.andExpect(jsonPath("$.studyProgram").value("Old Program"))
-				.andExpect(jsonPath("$.course").value(4));
+				.andExpect(jsonPath("$.course").value(4))
+				.andExpect(jsonPath("$.status").value("DRAFT"));
+	}
+
+	@Test
+	void updateProfileChangesStatus() throws Exception {
+		String location = mockMvc.perform(post("/api/profiles")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "displayName": "Status Profile",
+								  "bio": "Bio",
+								  "telegram": "@status_profile",
+								  "faculty": "FICT",
+								  "studyProgram": "Software Engineering",
+								  "course": 2
+								}
+								"""))
+				.andExpect(status().isCreated())
+				.andReturn()
+				.getResponse()
+				.getHeader("Location");
+
+		mockMvc.perform(patch(location)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "status": "ACTIVE"
+								}
+								"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.displayName").value("Status Profile"))
+				.andExpect(jsonPath("$.status").value("ACTIVE"));
 	}
 
 	@Test

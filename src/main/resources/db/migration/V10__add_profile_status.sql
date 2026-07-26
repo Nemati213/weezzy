@@ -1,0 +1,5 @@
+ALTER TABLE profiles
+ADD COLUMN status varchar(20) NOT NULL DEFAULT 'DRAFT';
+
+ALTER TABLE profiles
+ALTER COLUMN status DROP DEFAULT;

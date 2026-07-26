@@ -4,6 +4,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import ru.itmo.nemat.weezzy.profile.ProfileStatus;
 
 public record UpdateProfileRequest(
         @Size(max = 80)
@@ -24,6 +25,8 @@ public record UpdateProfileRequest(
 
         @Min(1)
         @Max(6)
-        Integer course
+        Integer course,
+
+        ProfileStatus status
 ) {
 }

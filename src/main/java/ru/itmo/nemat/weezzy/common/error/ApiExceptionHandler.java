@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import ru.itmo.nemat.weezzy.common.exception.BadRequestException;
 import ru.itmo.nemat.weezzy.common.exception.ConflictException;
 import ru.itmo.nemat.weezzy.common.exception.NotFoundException;
 
@@ -22,6 +23,11 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(ConflictException.class)
 	public ResponseEntity<ApiErrorResponse> handleConflict(ConflictException exception, HttpServletRequest request) {
 		return buildResponse(HttpStatus.CONFLICT, exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(BadRequestException.class)
+	public ResponseEntity<ApiErrorResponse> handleBadRequest(BadRequestException exception, HttpServletRequest request) {
+		return buildResponse(HttpStatus.BAD_REQUEST, exception.getMessage(), request);
 	}
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)
