@@ -2,6 +2,7 @@ package ru.itmo.nemat.weezzy.profile.goal;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -11,4 +12,7 @@ public interface ProfileGoalRepository extends JpaRepository<ProfileGoal, Profil
 	boolean existsByProfileIdAndGoalId(UUID profileId, UUID goalId);
 
 	void deleteByProfileIdAndGoalId(UUID profileId, UUID goalId);
+
+	List<ProfileGoal> findAllByProfileIdIn(Collection<UUID> profileIds);
+
 }

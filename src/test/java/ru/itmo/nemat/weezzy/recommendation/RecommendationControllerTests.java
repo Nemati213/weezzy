@@ -102,6 +102,23 @@ class RecommendationControllerTests {
 	}
 
 	@Test
+	void recommendationsRespectLimitParameter() throws Exception {
+		String source = createProfile("Recommendation Limit Source");
+		String firstCandidate = createProfile("Recommendation Limit First");
+		String secondCandidate = createProfile("Recommendation Limit Second");
+		String goal = createGoal("RECOMMENDATION_LIMIT_GOAL", "Recommendation Limit Goal");
+		addGoal(source, goal);
+		addGoal(firstCandidate, goal);
+		addGoal(secondCandidate, goal);
+		activateProfile(firstCandidate);
+		activateProfile(secondCandidate);
+
+		mockMvc.perform(get(source + "/recommendations?limit=1"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(1));
+	}
+
+	@Test
 	void recommendationsWorkWhenProfileHasOnlyInterests() throws Exception {
 		String source = createProfile("Recommendation Only Interests Source");
 		String candidate = createProfile("Recommendation Only Interests Candidate");
