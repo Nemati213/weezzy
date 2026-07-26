@@ -173,6 +173,46 @@ class RecommendationControllerTests {
 	}
 
 	@Test
+	void recommendationsSkipCandidateAfterPassVote() throws Exception {
+		String source = createProfile("Recommendation Pass Vote Source");
+		String candidate = createProfile("Recommendation Pass Vote Candidate");
+		String goal = createGoal("RECOMMENDATION_PASS_VOTE_GOAL", "Recommendation Pass Vote Goal");
+		addGoal(source, goal);
+		addGoal(candidate, goal);
+		activateProfile(candidate);
+
+		mockMvc.perform(get(source + "/recommendations"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("Recommendation Pass Vote Candidate")));
+
+		vote(source, candidate, "PASS");
+
+		mockMvc.perform(get(source + "/recommendations"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(not(containsString("Recommendation Pass Vote Candidate"))));
+	}
+
+	@Test
+	void recommendationsSkipCandidateAfterLikeVote() throws Exception {
+		String source = createProfile("Recommendation Like Vote Source");
+		String candidate = createProfile("Recommendation Like Vote Candidate");
+		String goal = createGoal("RECOMMENDATION_LIKE_VOTE_GOAL", "Recommendation Like Vote Goal");
+		addGoal(source, goal);
+		addGoal(candidate, goal);
+		activateProfile(candidate);
+
+		mockMvc.perform(get(source + "/recommendations"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("Recommendation Like Vote Candidate")));
+
+		vote(source, candidate, "LIKE");
+
+		mockMvc.perform(get(source + "/recommendations"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(not(containsString("Recommendation Like Vote Candidate"))));
+	}
+
+	@Test
 	void recommendationsReturnNotFoundForMissingProfile() throws Exception {
 		mockMvc.perform(get("/api/profiles/00000000-0000-0000-0000-000000000000/recommendations"))
 				.andExpect(status().isNotFound())
@@ -260,6 +300,17 @@ class RecommendationControllerTests {
 	private void addGoal(String profileLocation, String goalLocation) throws Exception {
 		mockMvc.perform(post(profileLocation + "/goals/" + idFromLocation(goalLocation)))
 				.andExpect(status().isCreated());
+	}
+
+	private void vote(String sourceProfileLocation, String targetProfileLocation, String action) throws Exception {
+		mockMvc.perform(post(sourceProfileLocation + "/votes/" + idFromLocation(targetProfileLocation))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "action": "%s"
+								}
+								""".formatted(action)))
+				.andExpect(status().isOk());
 	}
 
 	private void activateProfile(String profileLocation) throws Exception {

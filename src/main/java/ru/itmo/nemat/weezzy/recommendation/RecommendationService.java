@@ -3,6 +3,7 @@ package ru.itmo.nemat.weezzy.recommendation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.itmo.nemat.weezzy.connection.vote.ProfileVoteService;
 import ru.itmo.nemat.weezzy.goal.Goal;
 import ru.itmo.nemat.weezzy.interest.Interest;
 import ru.itmo.nemat.weezzy.profile.Profile;
@@ -33,6 +34,7 @@ public class RecommendationService {
 	private final ProfileSkillService profileSkillService;
 	private final ProfileInterestService profileInterestService;
 	private final ProfileGoalService profileGoalService;
+	private final ProfileVoteService profileVoteService;
 
 	@Transactional(readOnly = true)
 	public List<ProfileRecommendationResponse> findRecommendations(UUID profileId) {
@@ -48,6 +50,8 @@ public class RecommendationService {
 				.map(Goal::getId)
 				.collect(Collectors.toCollection(HashSet::new));
 
+		Set<UUID> sourceVotes = profileVoteService.findVotedTargetProfileIds(profileId);
+
 		if (sourceSkillIds.isEmpty() && sourceInterestIds.isEmpty() && sourceGoalIds.isEmpty()) {
 			return List.of();
 		}
@@ -55,6 +59,7 @@ public class RecommendationService {
 		return profileService.findAll().stream()
 				.filter(candidate -> !candidate.getId().equals(profileId))
 				.filter(candidate -> candidate.getStatus().equals(ProfileStatus.ACTIVE))
+				.filter(candidate -> !sourceVotes.contains(candidate.getId()))
 				.map(candidate -> recommendationFor(candidate, sourceSkillIds, sourceInterestIds, sourceGoalIds))
 				.filter(recommendation -> recommendation.score() > 0)
 				.sorted(Comparator

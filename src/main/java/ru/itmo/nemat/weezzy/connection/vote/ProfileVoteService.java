@@ -7,7 +7,9 @@ import ru.itmo.nemat.weezzy.connection.match.ProfileMatchService;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -31,7 +33,7 @@ public class ProfileVoteService {
 					profileVote.setSourceProfileId(sourceProfileId);
 					profileVote.setTargetProfileId(targetProfileId);
 					return profileVote;
-		});
+				});
 		vote.setAction(action);
 
 		ProfileVote savedVote = repository.save(vote);
@@ -49,5 +51,14 @@ public class ProfileVoteService {
 		profileService.findById(sourceProfileId);
 
 		return repository.findBySourceProfileId(sourceProfileId);
+	}
+
+	@Transactional(readOnly = true)
+	public Set<UUID> findVotedTargetProfileIds(UUID sourceProfileId) {
+		profileService.findById(sourceProfileId);
+
+		return repository.findBySourceProfileId(sourceProfileId).stream()
+				.map(ProfileVote::getTargetProfileId)
+				.collect(Collectors.toSet());
 	}
 }

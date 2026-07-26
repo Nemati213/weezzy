@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.itmo.nemat.weezzy.connection.match.dto.ProfileMatchResponse;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 
 import java.util.List;
@@ -31,10 +32,26 @@ public class ProfileMatchService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<ProfileMatch> findAllMatchesByProfileId(UUID profileId) {
+	public List<ProfileMatchResponse> findAllMatchesByProfileId(UUID profileId) {
 		profileService.findById(profileId);
 
-		return repository.findByFirstProfileIdOrSecondProfileId(profileId, profileId);
+		return repository.findByFirstProfileIdOrSecondProfileId(profileId, profileId)
+				.stream()
+				.map(profileMatch -> ProfileMatchResponse.from(
+						profileMatch,
+						profileService.findById(otherProfileId(profileId, profileMatch))
+				))
+				.toList();
+	}
+
+	private UUID otherProfileId(UUID sourceProfileId, ProfileMatch profileMatch) {
+		if (sourceProfileId.equals(profileMatch.getFirstProfileId())) {
+			return profileMatch.getSecondProfileId();
+		}
+		if (sourceProfileId.equals(profileMatch.getSecondProfileId())) {
+			return profileMatch.getFirstProfileId();
+		}
+		throw new IllegalArgumentException("Profile is not part of match: " + sourceProfileId);
 	}
 
 	private ProfileMatch saveNewMatch(ProfileMatchId matchId) {

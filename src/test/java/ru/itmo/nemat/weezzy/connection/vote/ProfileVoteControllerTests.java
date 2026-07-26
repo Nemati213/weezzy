@@ -181,8 +181,15 @@ class ProfileVoteControllerTests {
 		mockMvc.perform(get(firstProfile + "/matches"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(1))
-				.andExpect(content().string(containsString(idFromLocation(firstProfile))))
-				.andExpect(content().string(containsString(idFromLocation(secondProfile))));
+				.andExpect(jsonPath("$[0].matchedProfile.id").value(idFromLocation(secondProfile)))
+				.andExpect(jsonPath("$[0].matchedProfile.displayName").value("Vote Match Second"))
+				.andExpect(jsonPath("$[0].createdAt").isNotEmpty());
+
+		mockMvc.perform(get(secondProfile + "/matches"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].matchedProfile.id").value(idFromLocation(firstProfile)))
+				.andExpect(jsonPath("$[0].matchedProfile.displayName").value("Vote Match First"));
 	}
 
 	@Test

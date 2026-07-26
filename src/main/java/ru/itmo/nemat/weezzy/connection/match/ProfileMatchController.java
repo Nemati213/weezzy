@@ -19,8 +19,6 @@ public class ProfileMatchController {
 
 	@GetMapping("/{profileId}/matches")
 	public ResponseEntity<List<ProfileMatchResponse>> findAllMatchesByProfileId(@PathVariable UUID profileId) {
-		return ResponseEntity.ok(service.findAllMatchesByProfileId(profileId).stream()
-				.map(ProfileMatchResponse::from)
-				.toList());
+		return ResponseEntity.ok(service.findAllMatchesByProfileId(profileId));
 	}
 }

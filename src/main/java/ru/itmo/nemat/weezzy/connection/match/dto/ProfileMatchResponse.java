@@ -1,19 +1,18 @@
 package ru.itmo.nemat.weezzy.connection.match.dto;
 
 import ru.itmo.nemat.weezzy.connection.match.ProfileMatch;
+import ru.itmo.nemat.weezzy.profile.Profile;
+import ru.itmo.nemat.weezzy.profile.dto.ProfileResponse;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 public record ProfileMatchResponse(
-		UUID firstProfileId,
-		UUID secondProfileId,
+		ProfileResponse matchedProfile,
 		LocalDateTime createdAt
 ) {
-	public static ProfileMatchResponse from(ProfileMatch profileMatch) {
+	public static ProfileMatchResponse from(ProfileMatch profileMatch, Profile matchedProfile) {
 		return new ProfileMatchResponse(
-				profileMatch.getFirstProfileId(),
-				profileMatch.getSecondProfileId(),
+				ProfileResponse.from(matchedProfile),
 				profileMatch.getCreatedAt()
 		);
 	}
