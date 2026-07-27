@@ -3,26 +3,21 @@ package ru.itmo.nemat.weezzy.connection.vote;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import ru.itmo.nemat.weezzy.profile.ProfileService;
+import ru.itmo.nemat.weezzy.profile.dto.CreateProfileRequest;
 
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
 @Testcontainers
 @SpringBootTest
-@AutoConfigureMockMvc
 class ProfileVoteServiceTests {
 
 	private static final DockerImageName POSTGRES_IMAGE =
@@ -35,13 +30,13 @@ class ProfileVoteServiceTests {
 			.withPassword("weezzy_dev_password");
 
 	@Autowired
-	private MockMvc mockMvc;
-
-	@Autowired
 	private ProfileVoteService service;
 
 	@Autowired
 	private ProfileVoteRepository repository;
+
+	@Autowired
+	private ProfileService profileService;
 
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
@@ -51,9 +46,9 @@ class ProfileVoteServiceTests {
 	}
 
 	@Test
-	void voteCreatesNewVote() throws Exception {
-		UUID sourceProfileId = idFromLocation(createProfile("Vote Source"));
-		UUID targetProfileId = idFromLocation(createProfile("Vote Target"));
+	void voteCreatesNewVote() {
+		UUID sourceProfileId = createProfile("Vote Source");
+		UUID targetProfileId = createProfile("Vote Target");
 
 		ProfileVote vote = service.vote(sourceProfileId, targetProfileId, ProfileVoteAction.LIKE);
 
@@ -65,9 +60,9 @@ class ProfileVoteServiceTests {
 	}
 
 	@Test
-	void voteUpdatesExistingVoteForSamePair() throws Exception {
-		UUID sourceProfileId = idFromLocation(createProfile("Vote Update Source"));
-		UUID targetProfileId = idFromLocation(createProfile("Vote Update Target"));
+	void voteUpdatesExistingVoteForSamePair() {
+		UUID sourceProfileId = createProfile("Vote Update Source");
+		UUID targetProfileId = createProfile("Vote Update Target");
 		service.vote(sourceProfileId, targetProfileId, ProfileVoteAction.LIKE);
 
 		ProfileVote updatedVote = service.vote(sourceProfileId, targetProfileId, ProfileVoteAction.PASS);
@@ -80,34 +75,22 @@ class ProfileVoteServiceTests {
 	}
 
 	@Test
-	void voteRejectsSelfVote() throws Exception {
-		UUID profileId = idFromLocation(createProfile("Vote Self"));
+	void voteRejectsSelfVote() {
+		UUID profileId = createProfile("Vote Self");
 
 		assertThatThrownBy(() -> service.vote(profileId, profileId, ProfileVoteAction.LIKE))
 				.isInstanceOf(SelfVoteException.class)
 				.hasMessage("Profile cannot vote for itself: " + profileId);
 	}
 
-	private String createProfile(String displayName) throws Exception {
-		return mockMvc.perform(post("/api/profiles")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "displayName": "%s",
-								  "bio": "Created for vote tests",
-								  "telegram": "@vote_test",
-								  "faculty": "FICT",
-								  "studyProgram": "Software Engineering",
-								  "course": 2
-								}
-								""".formatted(displayName)))
-				.andExpect(status().isCreated())
-				.andReturn()
-				.getResponse()
-				.getHeader("Location");
-	}
-
-	private UUID idFromLocation(String location) {
-		return UUID.fromString(location.substring(location.lastIndexOf('/') + 1));
+	private UUID createProfile(String displayName) {
+		return profileService.create(new CreateProfileRequest(
+				displayName,
+				"Created for vote tests",
+				"@vote_test",
+				"FICT",
+				"Software Engineering",
+				2
+		)).getId();
 	}
 }

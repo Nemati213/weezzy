@@ -12,6 +12,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
+import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser.TestProfile;
+import tools.jackson.databind.ObjectMapper;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
@@ -38,6 +41,9 @@ class ProfileVoteControllerTests {
 	@Autowired
 	private MockMvc mockMvc;
 
+	@Autowired
+	private ObjectMapper objectMapper;
+
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
 		registry.add("spring.datasource.url", postgres::getJdbcUrl);
@@ -46,20 +52,14 @@ class ProfileVoteControllerTests {
 	}
 
 	@Test
-	void createVoteReturnsSavedVote() throws Exception {
-		String sourceProfile = createProfile("Vote Controller Source");
-		String targetProfile = createProfile("Vote Controller Target");
+	void currentUserVotesWithoutSendingSourceProfileId() throws Exception {
+		TestProfile source = createProfile("Vote Controller Source");
+		TestProfile target = createProfile("Vote Controller Target");
 
-		mockMvc.perform(post(sourceProfile + "/votes/" + idFromLocation(targetProfile))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "action": "LIKE"
-								}
-								"""))
+		performVote(source, target.id(), "LIKE")
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.sourceProfileId").value(idFromLocation(sourceProfile)))
-				.andExpect(jsonPath("$.targetProfileId").value(idFromLocation(targetProfile)))
+				.andExpect(jsonPath("$.sourceProfileId").value(source.id()))
+				.andExpect(jsonPath("$.targetProfileId").value(target.id()))
 				.andExpect(jsonPath("$.action").value("LIKE"))
 				.andExpect(jsonPath("$.createdAt").isNotEmpty())
 				.andExpect(jsonPath("$.updatedAt").isNotEmpty());
@@ -67,10 +67,10 @@ class ProfileVoteControllerTests {
 
 	@Test
 	void createVoteRejectsMissingAction() throws Exception {
-		String sourceProfile = createProfile("Vote Missing Action Source");
-		String targetProfile = createProfile("Vote Missing Action Target");
+		TestProfile source = createProfile("Vote Missing Action Source");
+		TestProfile target = createProfile("Vote Missing Action Target");
 
-		mockMvc.perform(post(sourceProfile + "/votes/" + idFromLocation(targetProfile))
+		mockMvc.perform(source.owner().authorize(post("/api/votes/" + target.id()))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("{}"))
 				.andExpect(status().isBadRequest())
@@ -78,22 +78,16 @@ class ProfileVoteControllerTests {
 	}
 
 	@Test
-	void createVoteUpdatesExistingVoteForSamePair() throws Exception {
-		String sourceProfile = createProfile("Vote Controller Update Source");
-		String targetProfile = createProfile("Vote Controller Update Target");
-		vote(sourceProfile, targetProfile, "LIKE");
+	void repeatedVoteUpdatesExistingVoteForSamePair() throws Exception {
+		TestProfile source = createProfile("Vote Update Source");
+		TestProfile target = createProfile("Vote Update Target");
+		performVote(source, target.id(), "LIKE").andExpect(status().isOk());
 
-		mockMvc.perform(post(sourceProfile + "/votes/" + idFromLocation(targetProfile))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "action": "PASS"
-								}
-								"""))
+		performVote(source, target.id(), "PASS")
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.action").value("PASS"));
 
-		mockMvc.perform(get(sourceProfile + "/votes"))
+		mockMvc.perform(source.owner().authorize(get("/api/votes")))
 				.andExpect(status().isOk())
 				.andExpect(content().string(containsString("PASS")))
 				.andExpect(content().string(not(containsString("LIKE"))));
@@ -101,155 +95,125 @@ class ProfileVoteControllerTests {
 
 	@Test
 	void createVoteRejectsSelfVote() throws Exception {
-		String profile = createProfile("Vote Controller Self");
+		TestProfile profile = createProfile("Vote Controller Self");
 
-		mockMvc.perform(post(profile + "/votes/" + idFromLocation(profile))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "action": "LIKE"
-								}
-								"""))
+		performVote(profile, profile.id(), "LIKE")
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value(containsString("Profile cannot vote for itself")));
 	}
 
 	@Test
-	void createVoteReturnsNotFoundForMissingSourceProfile() throws Exception {
-		String targetProfile = createProfile("Vote Missing Source Target");
+	void voteReturnsNotFoundWhenCurrentUserHasNoProfile() throws Exception {
+		AuthenticatedTestUser user = AuthenticatedTestUser.register(mockMvc, objectMapper);
+		TestProfile target = createProfile("Vote Missing Source Target");
 
-		mockMvc.perform(post("/api/profiles/00000000-0000-0000-0000-000000000000/votes/"
-						+ idFromLocation(targetProfile))
+		mockMvc.perform(user.authorize(post("/api/votes/" + target.id()))
 						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "action": "LIKE"
-								}
-								"""))
+						.content(voteJson("LIKE")))
 				.andExpect(status().isNotFound());
 	}
 
 	@Test
-	void createVoteReturnsNotFoundForMissingTargetProfile() throws Exception {
-		String sourceProfile = createProfile("Vote Missing Target Source");
+	void voteReturnsNotFoundForMissingTargetProfile() throws Exception {
+		TestProfile source = createProfile("Vote Missing Target Source");
 
-		mockMvc.perform(post(sourceProfile + "/votes/00000000-0000-0000-0000-000000000000")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "action": "LIKE"
-								}
-								"""))
+		performVote(source, "00000000-0000-0000-0000-000000000000", "LIKE")
 				.andExpect(status().isNotFound());
 	}
 
 	@Test
-	void getVotesReturnsVotesBySourceProfile() throws Exception {
-		String sourceProfile = createProfile("Vote List Source");
-		String firstTargetProfile = createProfile("Vote List First Target");
-		String secondTargetProfile = createProfile("Vote List Second Target");
-		vote(sourceProfile, firstTargetProfile, "LIKE");
-		vote(sourceProfile, secondTargetProfile, "PASS");
+	void getVotesReturnsOnlyCurrentUsersVotes() throws Exception {
+		TestProfile source = createProfile("Vote List Source");
+		TestProfile firstTarget = createProfile("Vote List First Target");
+		TestProfile secondTarget = createProfile("Vote List Second Target");
+		performVote(source, firstTarget.id(), "LIKE").andExpect(status().isOk());
+		performVote(source, secondTarget.id(), "PASS").andExpect(status().isOk());
 
-		mockMvc.perform(get(sourceProfile + "/votes"))
+		mockMvc.perform(source.owner().authorize(get("/api/votes")))
 				.andExpect(status().isOk())
-				.andExpect(content().string(containsString(idFromLocation(firstTargetProfile))))
-				.andExpect(content().string(containsString(idFromLocation(secondTargetProfile))))
+				.andExpect(content().string(containsString(firstTarget.id())))
+				.andExpect(content().string(containsString(secondTarget.id())))
 				.andExpect(content().string(containsString("LIKE")))
 				.andExpect(content().string(containsString("PASS")));
 	}
 
 	@Test
-	void getVotesReturnsNotFoundForMissingSourceProfile() throws Exception {
-		mockMvc.perform(get("/api/profiles/00000000-0000-0000-0000-000000000000/votes"))
-				.andExpect(status().isNotFound());
+	void voteEndpointsRequireAuthentication() throws Exception {
+		mockMvc.perform(get("/api/votes"))
+				.andExpect(status().isUnauthorized());
+		mockMvc.perform(post("/api/votes/00000000-0000-0000-0000-000000000000")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(voteJson("LIKE")))
+				.andExpect(status().isUnauthorized());
 	}
 
 	@Test
-	void reciprocalLikesCreateMatch() throws Exception {
-		String firstProfile = createProfile("Vote Match First");
-		String secondProfile = createProfile("Vote Match Second");
+	void reciprocalLikesCreateMatchForBothUsers() throws Exception {
+		TestProfile first = createProfile("Vote Match First");
+		TestProfile second = createProfile("Vote Match Second");
 
-		vote(firstProfile, secondProfile, "LIKE");
-
-		mockMvc.perform(get(firstProfile + "/matches"))
+		performVote(first, second.id(), "LIKE").andExpect(status().isOk());
+		mockMvc.perform(first.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
 				.andExpect(content().json("[]"));
 
-		vote(secondProfile, firstProfile, "LIKE");
+		performVote(second, first.id(), "LIKE").andExpect(status().isOk());
 
-		mockMvc.perform(get(firstProfile + "/matches"))
+		mockMvc.perform(first.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(1))
-				.andExpect(jsonPath("$[0].matchedProfile.id").value(idFromLocation(secondProfile)))
-				.andExpect(jsonPath("$[0].matchedProfile.displayName").value("Vote Match Second"))
-				.andExpect(jsonPath("$[0].createdAt").isNotEmpty());
-
-		mockMvc.perform(get(secondProfile + "/matches"))
+				.andExpect(jsonPath("$[0].matchedProfile.id").value(second.id()))
+				.andExpect(jsonPath("$[0].matchedProfile.displayName").value("Vote Match Second"));
+		mockMvc.perform(second.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.length()").value(1))
-				.andExpect(jsonPath("$[0].matchedProfile.id").value(idFromLocation(firstProfile)))
-				.andExpect(jsonPath("$[0].matchedProfile.displayName").value("Vote Match First"));
+				.andExpect(jsonPath("$[0].matchedProfile.id").value(first.id()));
 	}
 
 	@Test
 	void passDoesNotCreateMatch() throws Exception {
-		String firstProfile = createProfile("Vote Match Pass First");
-		String secondProfile = createProfile("Vote Match Pass Second");
+		TestProfile first = createProfile("Vote Match Pass First");
+		TestProfile second = createProfile("Vote Match Pass Second");
 
-		vote(firstProfile, secondProfile, "PASS");
-		vote(secondProfile, firstProfile, "LIKE");
+		performVote(first, second.id(), "PASS").andExpect(status().isOk());
+		performVote(second, first.id(), "LIKE").andExpect(status().isOk());
 
-		mockMvc.perform(get(firstProfile + "/matches"))
+		mockMvc.perform(first.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
 				.andExpect(content().json("[]"));
 	}
 
 	@Test
 	void repeatedReciprocalLikeDoesNotDuplicateMatch() throws Exception {
-		String firstProfile = createProfile("Vote Match Repeat First");
-		String secondProfile = createProfile("Vote Match Repeat Second");
-		vote(firstProfile, secondProfile, "LIKE");
-		vote(secondProfile, firstProfile, "LIKE");
+		TestProfile first = createProfile("Vote Match Repeat First");
+		TestProfile second = createProfile("Vote Match Repeat Second");
+		performVote(first, second.id(), "LIKE").andExpect(status().isOk());
+		performVote(second, first.id(), "LIKE").andExpect(status().isOk());
+		performVote(second, first.id(), "LIKE").andExpect(status().isOk());
 
-		vote(secondProfile, firstProfile, "LIKE");
-
-		mockMvc.perform(get(firstProfile + "/matches"))
+		mockMvc.perform(first.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(1));
 	}
 
-	private String createProfile(String displayName) throws Exception {
-		return mockMvc.perform(post("/api/profiles")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "displayName": "%s",
-								  "bio": "Created for profile-vote controller tests",
-								  "telegram": "@profile_vote_controller_test",
-								  "faculty": "FICT",
-								  "studyProgram": "Software Engineering",
-								  "course": 2
-								}
-								""".formatted(displayName)))
-				.andExpect(status().isCreated())
-				.andReturn()
-				.getResponse()
-				.getHeader("Location");
+	private TestProfile createProfile(String displayName) throws Exception {
+		return AuthenticatedTestUser.register(mockMvc, objectMapper).createProfile(displayName);
 	}
 
-	private void vote(String sourceProfileLocation, String targetProfileLocation, String action) throws Exception {
-		mockMvc.perform(post(sourceProfileLocation + "/votes/" + idFromLocation(targetProfileLocation))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "action": "%s"
-								}
-								""".formatted(action)))
-				.andExpect(status().isOk());
+	private org.springframework.test.web.servlet.ResultActions performVote(
+			TestProfile source,
+			String targetProfileId,
+			String action
+	) throws Exception {
+		return mockMvc.perform(source.owner().authorize(post("/api/votes/" + targetProfileId))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(voteJson(action)));
 	}
 
-	private String idFromLocation(String location) {
-		return location.substring(location.lastIndexOf('/') + 1);
+	private String voteJson(String action) {
+		return """
+				{
+				  "action": "%s"
+				}
+				""".formatted(action);
 	}
 }

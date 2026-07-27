@@ -3,6 +3,7 @@ package ru.itmo.nemat.weezzy.profile;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import ru.itmo.nemat.weezzy.goal.Goal;
 import ru.itmo.nemat.weezzy.goal.dto.GoalResponse;
@@ -14,6 +15,7 @@ import ru.itmo.nemat.weezzy.profile.dto.UpdateProfileRequest;
 import ru.itmo.nemat.weezzy.profile.goal.ProfileGoalService;
 import ru.itmo.nemat.weezzy.profile.interest.ProfileInterestService;
 import ru.itmo.nemat.weezzy.profile.skill.ProfileSkillService;
+import ru.itmo.nemat.weezzy.security.JwtAuthenticatedUser;
 import ru.itmo.nemat.weezzy.skill.Skill;
 import ru.itmo.nemat.weezzy.skill.dto.SkillResponse;
 
@@ -31,12 +33,20 @@ public class ProfileController {
 	private final ProfileGoalService profileGoalService;
 
 	@PostMapping
-	public ResponseEntity<ProfileResponse> createProfile(@Valid @RequestBody CreateProfileRequest request) {
-		Profile profile = service.create(request);
+	public ResponseEntity<ProfileResponse> createProfile(
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser,
+			@Valid @RequestBody CreateProfileRequest request
+	) {
+		Profile profile = service.createForUser(authenticatedUser.id(), request);
 
 		return ResponseEntity
 				.created(URI.create("/api/profiles/" + profile.getId()))
 				.body(ProfileResponse.from(profile));
+	}
+
+	@GetMapping("/me")
+	public ResponseEntity<ProfileResponse> getProfile(@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser) {
+		return ResponseEntity.ok(ProfileResponse.from(service.findByUserId(authenticatedUser.id())));
 	}
 
 	@GetMapping("/{id}")
@@ -49,83 +59,105 @@ public class ProfileController {
 		return ResponseEntity.ok(service.findAll().stream().map(ProfileResponse::from).toList());
 	}
 
-	@PatchMapping("/{id}")
-	public ResponseEntity<ProfileResponse> updateProfile(@PathVariable UUID id, @Valid @RequestBody UpdateProfileRequest request) {
-		return ResponseEntity.ok(ProfileResponse.from(service.update(id, request)));
+	@PatchMapping("/me")
+	public ResponseEntity<ProfileResponse> updateProfile(
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser,
+			@Valid @RequestBody UpdateProfileRequest request
+	) {
+		return ResponseEntity.ok(ProfileResponse.from(service.updateForUser(authenticatedUser.id(), request)));
 	}
 
-	@PostMapping("/{profileId}/skills/{skillId}")
-	public ResponseEntity<SkillResponse> addSkill(@PathVariable UUID profileId, @PathVariable UUID skillId) {
+	@PostMapping("/me/skills/{skillId}")
+	public ResponseEntity<SkillResponse> addSkill(
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser,
+			@PathVariable UUID skillId
+	) {
+		UUID profileId = currentProfileId(authenticatedUser);
 		Skill skill = profileSkillService.addSkill(profileId, skillId);
 		return ResponseEntity
-				.created(URI.create("/api/profiles/" + profileId + "/skills/" + skillId))
+				.created(URI.create("/api/profiles/me/skills/" + skillId))
 				.body(SkillResponse.from(skill));
 	}
 
-	@GetMapping("/{profileId}/skills")
-	public ResponseEntity<List<SkillResponse>> getSkills(@PathVariable UUID profileId) {
-		return ResponseEntity.ok(profileSkillService.findSkills(profileId).stream()
+	@GetMapping("/me/skills")
+	public ResponseEntity<List<SkillResponse>> getSkills(
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser
+	) {
+		return ResponseEntity.ok(profileSkillService.findSkills(currentProfileId(authenticatedUser)).stream()
 				.map(SkillResponse::from)
 				.toList());
 	}
 
-	@DeleteMapping("/{profileId}/skills/{skillId}")
-	public ResponseEntity<Void> removeSkill(@PathVariable UUID profileId, @PathVariable UUID skillId) {
-		profileSkillService.removeSkill(profileId, skillId);
+	@DeleteMapping("/me/skills/{skillId}")
+	public ResponseEntity<Void> removeSkill(
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser,
+			@PathVariable UUID skillId
+	) {
+		profileSkillService.removeSkill(currentProfileId(authenticatedUser), skillId);
 		return ResponseEntity.noContent().build();
 	}
 
-	@PostMapping("/{profileId}/interests/{interestId}")
+	@PostMapping("/me/interests/{interestId}")
 	public ResponseEntity<InterestResponse> addInterest(
-			@PathVariable UUID profileId,
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser,
 			@PathVariable UUID interestId
 	) {
+		UUID profileId = currentProfileId(authenticatedUser);
 		Interest interest = profileInterestService.addInterest(profileId, interestId);
 		return ResponseEntity
-				.created(URI.create("/api/profiles/" + profileId + "/interests/" + interestId))
+				.created(URI.create("/api/profiles/me/interests/" + interestId))
 				.body(InterestResponse.from(interest));
 	}
 
-	@GetMapping("/{profileId}/interests")
-	public ResponseEntity<List<InterestResponse>> getInterests(@PathVariable UUID profileId) {
-		return ResponseEntity.ok(profileInterestService.findInterests(profileId).stream()
+	@GetMapping("/me/interests")
+	public ResponseEntity<List<InterestResponse>> getInterests(
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser
+	) {
+		return ResponseEntity.ok(profileInterestService.findInterests(currentProfileId(authenticatedUser)).stream()
 				.map(InterestResponse::from)
 				.toList());
 	}
 
-	@DeleteMapping("/{profileId}/interests/{interestId}")
+	@DeleteMapping("/me/interests/{interestId}")
 	public ResponseEntity<Void> removeInterest(
-			@PathVariable UUID profileId,
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser,
 			@PathVariable UUID interestId
 	) {
-		profileInterestService.removeInterest(profileId, interestId);
+		profileInterestService.removeInterest(currentProfileId(authenticatedUser), interestId);
 		return ResponseEntity.noContent().build();
 	}
 
-	@PostMapping("/{profileId}/goals/{goalId}")
+	@PostMapping("/me/goals/{goalId}")
 	public ResponseEntity<GoalResponse> addGoal(
-			@PathVariable UUID profileId,
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser,
 			@PathVariable UUID goalId
 	) {
+		UUID profileId = currentProfileId(authenticatedUser);
 		Goal goal = profileGoalService.addGoal(profileId, goalId);
 		return ResponseEntity
-				.created(URI.create("/api/profiles/" + profileId + "/goals/" + goalId))
+				.created(URI.create("/api/profiles/me/goals/" + goalId))
 				.body(GoalResponse.from(goal));
 	}
 
-	@GetMapping("/{profileId}/goals")
-	public ResponseEntity<List<GoalResponse>> getGoals(@PathVariable UUID profileId) {
-		return ResponseEntity.ok(profileGoalService.findGoals(profileId).stream()
+	@GetMapping("/me/goals")
+	public ResponseEntity<List<GoalResponse>> getGoals(
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser
+	) {
+		return ResponseEntity.ok(profileGoalService.findGoals(currentProfileId(authenticatedUser)).stream()
 				.map(GoalResponse::from)
 				.toList());
 	}
 
-	@DeleteMapping("/{profileId}/goals/{goalId}")
+	@DeleteMapping("/me/goals/{goalId}")
 	public ResponseEntity<Void> removeGoal(
-			@PathVariable UUID profileId,
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser,
 			@PathVariable UUID goalId
 	) {
-		profileGoalService.removeGoal(profileId, goalId);
+		profileGoalService.removeGoal(currentProfileId(authenticatedUser), goalId);
 		return ResponseEntity.noContent().build();
+	}
+
+	private UUID currentProfileId(JwtAuthenticatedUser authenticatedUser) {
+		return service.findByUserId(authenticatedUser.id()).getId();
 	}
 }

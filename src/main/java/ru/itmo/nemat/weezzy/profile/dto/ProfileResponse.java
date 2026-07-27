@@ -16,7 +16,8 @@ public record ProfileResponse(
 		Integer course,
 		LocalDateTime createdAt,
 		LocalDateTime updatedAt,
-		ProfileStatus status
+		ProfileStatus status,
+		UUID userId
 ) {
 	public static ProfileResponse from(Profile profile) {
 		return new ProfileResponse(
@@ -29,7 +30,8 @@ public record ProfileResponse(
 				profile.getCourse(),
 				profile.getCreatedAt(),
 				profile.getUpdatedAt(),
-				profile.getStatus()
+				profile.getStatus(),
+				profile.getUser() == null ? null : profile.getUser().getId()
 		);
 	}
 }

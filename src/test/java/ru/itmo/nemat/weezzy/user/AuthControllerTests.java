@@ -1,0 +1,181 @@
+package ru.itmo.nemat.weezzy.user;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+
+import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@Testcontainers
+@SpringBootTest
+@AutoConfigureMockMvc
+class AuthControllerTests {
+
+	private static final DockerImageName POSTGRES_IMAGE =
+			DockerImageName.parse("pgvector/pgvector:pg17").asCompatibleSubstituteFor("postgres");
+
+	@Container
+	static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(POSTGRES_IMAGE)
+			.withDatabaseName("weezzy")
+			.withUsername("weezzy")
+			.withPassword("weezzy_dev_password");
+
+	@Autowired
+	private MockMvc mockMvc;
+
+	@Autowired
+	private ObjectMapper objectMapper;
+
+	@DynamicPropertySource
+	static void postgresProperties(DynamicPropertyRegistry registry) {
+		registry.add("spring.datasource.url", postgres::getJdbcUrl);
+		registry.add("spring.datasource.username", postgres::getUsername);
+		registry.add("spring.datasource.password", postgres::getPassword);
+	}
+
+	@Test
+	void registerReturnsCreatedUserWithoutPasswordHash() throws Exception {
+		mockMvc.perform(post("/api/auth/register")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "email": "AuthRegister@ITMO.ru",
+								  "password": "password123"
+								}
+								"""))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.accessToken").isNotEmpty())
+				.andExpect(jsonPath("$.tokenType").value("Bearer"))
+				.andExpect(jsonPath("$.user.id").isNotEmpty())
+				.andExpect(jsonPath("$.user.email").value("authregister@itmo.ru"))
+				.andExpect(jsonPath("$.user.role").value("USER"))
+				.andExpect(jsonPath("$.user.createdAt").isNotEmpty())
+				.andExpect(jsonPath("$.passwordHash").doesNotExist());
+	}
+
+	@Test
+	void registerRejectsDuplicateEmailIgnoringCase() throws Exception {
+		register("duplicate-auth@itmo.ru", "password123")
+				.andExpect(status().isCreated());
+
+		register("DUPLICATE-AUTH@ITMO.RU", "password456")
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.status").value(409))
+				.andExpect(jsonPath("$.message").value("User already exists: duplicate-auth@itmo.ru"));
+	}
+
+	@Test
+	void registerRejectsInvalidEmail() throws Exception {
+		register("not-an-email", "password123")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(containsString("email")));
+	}
+
+	@Test
+	void registerRejectsShortPassword() throws Exception {
+		register("short-password@itmo.ru", "123")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(containsString("password")));
+	}
+
+	@Test
+	void loginReturnsUserForCorrectPassword() throws Exception {
+		register("login-user@itmo.ru", "password123")
+				.andExpect(status().isCreated());
+
+		login("LOGIN-USER@ITMO.RU", "password123")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.accessToken").isNotEmpty())
+				.andExpect(jsonPath("$.tokenType").value("Bearer"))
+				.andExpect(jsonPath("$.user.id").isNotEmpty())
+				.andExpect(jsonPath("$.user.email").value("login-user@itmo.ru"))
+				.andExpect(jsonPath("$.user.role").value("USER"))
+				.andExpect(jsonPath("$.passwordHash").doesNotExist());
+	}
+
+	@Test
+	void loginRejectsWrongPassword() throws Exception {
+		register("wrong-login@itmo.ru", "password123")
+				.andExpect(status().isCreated());
+
+		login("wrong-login@itmo.ru", "password456")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.status").value(400))
+				.andExpect(jsonPath("$.message").value("Invalid email or password"));
+	}
+
+	@Test
+	void loginRejectsMissingUserAsInvalidCredentials() throws Exception {
+		login("missing-user@itmo.ru", "password123")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Invalid email or password"));
+	}
+
+	@Test
+	void meReturnsCurrentUserForValidToken() throws Exception {
+		String token = registerAndGetToken("me-user@itmo.ru", "password123");
+
+		mockMvc.perform(get("/api/auth/me")
+						.header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.id").isNotEmpty())
+				.andExpect(jsonPath("$.email").value("me-user@itmo.ru"))
+				.andExpect(jsonPath("$.role").value("USER"));
+	}
+
+	@Test
+	void meRejectsMissingToken() throws Exception {
+		mockMvc.perform(get("/api/auth/me"))
+				.andExpect(status().isUnauthorized());
+	}
+
+	private ResultActions register(String email, String password) throws Exception {
+		return mockMvc.perform(post("/api/auth/register")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "email": "%s",
+						  "password": "%s"
+						}
+						""".formatted(email, password)));
+	}
+
+	private ResultActions login(String email, String password) throws Exception {
+		return mockMvc.perform(post("/api/auth/login")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "email": "%s",
+						  "password": "%s"
+						}
+						""".formatted(email, password)));
+	}
+
+	private String registerAndGetToken(String email, String password) throws Exception {
+		String response = register(email, password)
+				.andExpect(status().isCreated())
+				.andReturn()
+				.getResponse()
+				.getContentAsString();
+		JsonNode json = objectMapper.readTree(response);
+
+		return json.path("accessToken").asText();
+	}
+}

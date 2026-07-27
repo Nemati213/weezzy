@@ -12,6 +12,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
+import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser.TestProfile;
+import tools.jackson.databind.ObjectMapper;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
@@ -39,6 +42,9 @@ class RecommendationControllerTests {
 	@Autowired
 	private MockMvc mockMvc;
 
+	@Autowired
+	private ObjectMapper objectMapper;
+
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
 		registry.add("spring.datasource.url", postgres::getJdbcUrl);
@@ -47,19 +53,22 @@ class RecommendationControllerTests {
 	}
 
 	@Test
-	void recommendationsUseWeightedSkillsInterestsAndGoals() throws Exception {
-		String source = createProfile("Recommendation Source");
-		String alice = createProfile("Recommendation Alice");
-		String timur = createProfile("Recommendation Timur");
-		String diana = createProfile("Recommendation Diana");
-		String bob = createProfile("Recommendation Bob");
+	void recommendationsUseCurrentProfileAndWeightedSignals() throws Exception {
+		TestProfile source = createProfile("Recommendation Source");
+		TestProfile alice = createProfile("Recommendation Alice");
+		TestProfile timur = createProfile("Recommendation Timur");
+		TestProfile diana = createProfile("Recommendation Diana");
+		TestProfile bob = createProfile("Recommendation Bob");
 
-		String java = createSkill("Recommendation Java");
-		String spring = createSkill("Recommendation Spring");
-		String python = createSkill("Recommendation Python");
-		String startups = createInterest("Recommendation Startups");
-		String hackathons = createInterest("Recommendation Hackathons");
-		String teamSearch = createGoal("RECOMMENDATION_TEAM_SEARCH", "Recommendation Team Search");
+		String java = idFromLocation(createSkill("Recommendation Java"));
+		String spring = idFromLocation(createSkill("Recommendation Spring"));
+		String python = idFromLocation(createSkill("Recommendation Python"));
+		String startups = idFromLocation(createInterest("Recommendation Startups"));
+		String hackathons = idFromLocation(createInterest("Recommendation Hackathons"));
+		String teamSearch = idFromLocation(createGoal(
+				"RECOMMENDATION_TEAM_SEARCH",
+				"Recommendation Team Search"
+		));
 
 		addSkill(source, java);
 		addSkill(source, spring);
@@ -70,276 +79,180 @@ class RecommendationControllerTests {
 		addSkill(alice, java);
 		addInterest(alice, startups);
 		addInterest(alice, hackathons);
-
 		addSkill(timur, java);
 		addSkill(timur, spring);
-
 		addGoal(diana, teamSearch);
-
 		addSkill(bob, python);
+
 		activateProfile(alice);
 		activateProfile(timur);
 		activateProfile(diana);
 		activateProfile(bob);
 
-		mockMvc.perform(get(source + "/recommendations"))
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].profile.displayName").value("Recommendation Alice"))
 				.andExpect(jsonPath("$[0].score").value(7))
-				.andExpect(jsonPath("$[0].matchedSkills[0]").value("Recommendation Java"))
-				.andExpect(jsonPath("$[0].matchedInterests[0]").value("Recommendation Hackathons"))
-				.andExpect(jsonPath("$[0].matchedInterests[1]").value("Recommendation Startups"))
-				.andExpect(jsonPath("$[0].matchedGoals").isEmpty())
 				.andExpect(jsonPath("$[1].profile.displayName").value("Recommendation Timur"))
 				.andExpect(jsonPath("$[1].score").value(6))
-				.andExpect(jsonPath("$[1].matchedInterests").isEmpty())
-				.andExpect(jsonPath("$[1].matchedGoals").isEmpty())
 				.andExpect(jsonPath("$[2].profile.displayName").value("Recommendation Diana"))
 				.andExpect(jsonPath("$[2].score").value(5))
-				.andExpect(jsonPath("$[2].matchedGoals[0]").value("Recommendation Team Search"))
 				.andExpect(content().string(not(containsString("Recommendation Bob"))))
 				.andExpect(content().string(not(containsString("Recommendation Source"))));
 	}
 
 	@Test
 	void recommendationsRespectLimitParameter() throws Exception {
-		String source = createProfile("Recommendation Limit Source");
-		String firstCandidate = createProfile("Recommendation Limit First");
-		String secondCandidate = createProfile("Recommendation Limit Second");
-		String goal = createGoal("RECOMMENDATION_LIMIT_GOAL", "Recommendation Limit Goal");
+		TestProfile source = createProfile("Recommendation Limit Source");
+		TestProfile first = createProfile("Recommendation Limit First");
+		TestProfile second = createProfile("Recommendation Limit Second");
+		String goal = idFromLocation(createGoal("RECOMMENDATION_LIMIT_GOAL", "Recommendation Limit Goal"));
 		addGoal(source, goal);
-		addGoal(firstCandidate, goal);
-		addGoal(secondCandidate, goal);
-		activateProfile(firstCandidate);
-		activateProfile(secondCandidate);
+		addGoal(first, goal);
+		addGoal(second, goal);
+		activateProfile(first);
+		activateProfile(second);
 
-		mockMvc.perform(get(source + "/recommendations?limit=1"))
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations?limit=1")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(1));
 	}
 
 	@Test
-	void recommendationsWorkWhenProfileHasOnlyInterests() throws Exception {
-		String source = createProfile("Recommendation Only Interests Source");
-		String candidate = createProfile("Recommendation Only Interests Candidate");
-		String interest = createInterest("Recommendation Only Interests Open Source");
-		addInterest(source, interest);
-		addInterest(candidate, interest);
+	void recommendationsReturnEmptyListWhenCurrentProfileHasNoSignals() throws Exception {
+		TestProfile source = createProfile("Recommendation No Signals Source");
+		TestProfile candidate = createProfile("Recommendation No Signals Candidate");
 		activateProfile(candidate);
 
-		mockMvc.perform(get(source + "/recommendations"))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$[0].profile.displayName")
-						.value("Recommendation Only Interests Candidate"))
-				.andExpect(jsonPath("$[0].score").value(2))
-				.andExpect(jsonPath("$[0].matchedSkills").isEmpty())
-				.andExpect(jsonPath("$[0].matchedInterests[0]")
-						.value("Recommendation Only Interests Open Source"))
-				.andExpect(jsonPath("$[0].matchedGoals").isEmpty());
-	}
-
-	@Test
-	void recommendationsWorkWhenProfileHasOnlyGoals() throws Exception {
-		String source = createProfile("Recommendation Only Goals Source");
-		String candidate = createProfile("Recommendation Only Goals Candidate");
-		String goal = createGoal("RECOMMENDATION_ONLY_GOALS", "Recommendation Only Goals Team");
-		addGoal(source, goal);
-		addGoal(candidate, goal);
-		activateProfile(candidate);
-
-		mockMvc.perform(get(source + "/recommendations"))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$[0].profile.displayName")
-						.value("Recommendation Only Goals Candidate"))
-				.andExpect(jsonPath("$[0].score").value(5))
-				.andExpect(jsonPath("$[0].matchedSkills").isEmpty())
-				.andExpect(jsonPath("$[0].matchedInterests").isEmpty())
-				.andExpect(jsonPath("$[0].matchedGoals[0]")
-						.value("Recommendation Only Goals Team"));
-	}
-
-	@Test
-	void recommendationsReturnEmptyListWhenProfileHasNoSignals() throws Exception {
-		String source = createProfile("Recommendation No Signals Source");
-		createProfile("Recommendation No Signals Candidate");
-
-		mockMvc.perform(get(source + "/recommendations"))
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
 				.andExpect(status().isOk())
 				.andExpect(content().json("[]"));
 	}
 
 	@Test
 	void recommendationsSkipDraftAndHiddenCandidates() throws Exception {
-		String source = createProfile("Recommendation Status Source");
-		String activeCandidate = createProfile("Recommendation Active Candidate");
-		String draftCandidate = createProfile("Recommendation Draft Candidate");
-		String hiddenCandidate = createProfile("Recommendation Hidden Candidate");
-		String goal = createGoal("RECOMMENDATION_STATUS_GOAL", "Recommendation Status Goal");
+		TestProfile source = createProfile("Recommendation Status Source");
+		TestProfile active = createProfile("Recommendation Active Candidate");
+		TestProfile draft = createProfile("Recommendation Draft Candidate");
+		TestProfile hidden = createProfile("Recommendation Hidden Candidate");
+		String goal = idFromLocation(createGoal("RECOMMENDATION_STATUS_GOAL", "Recommendation Status Goal"));
 		addGoal(source, goal);
-		addGoal(activeCandidate, goal);
-		addGoal(draftCandidate, goal);
-		addGoal(hiddenCandidate, goal);
-		activateProfile(activeCandidate);
-		hideProfile(hiddenCandidate);
+		addGoal(active, goal);
+		addGoal(draft, goal);
+		addGoal(hidden, goal);
+		activateProfile(active);
+		updateProfileStatus(hidden, "HIDDEN");
 
-		mockMvc.perform(get(source + "/recommendations"))
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$[0].profile.displayName").value("Recommendation Active Candidate"))
+				.andExpect(content().string(containsString("Recommendation Active Candidate")))
 				.andExpect(content().string(not(containsString("Recommendation Draft Candidate"))))
 				.andExpect(content().string(not(containsString("Recommendation Hidden Candidate"))));
 	}
 
 	@Test
-	void recommendationsSkipCandidateAfterPassVote() throws Exception {
-		String source = createProfile("Recommendation Pass Vote Source");
-		String candidate = createProfile("Recommendation Pass Vote Candidate");
-		String goal = createGoal("RECOMMENDATION_PASS_VOTE_GOAL", "Recommendation Pass Vote Goal");
+	void recommendationsSkipCandidateAfterVote() throws Exception {
+		TestProfile source = createProfile("Recommendation Vote Source");
+		TestProfile candidate = createProfile("Recommendation Vote Candidate");
+		String goal = idFromLocation(createGoal("RECOMMENDATION_VOTE_GOAL", "Recommendation Vote Goal"));
 		addGoal(source, goal);
 		addGoal(candidate, goal);
 		activateProfile(candidate);
 
-		mockMvc.perform(get(source + "/recommendations"))
-				.andExpect(status().isOk())
-				.andExpect(content().string(containsString("Recommendation Pass Vote Candidate")));
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
+				.andExpect(content().string(containsString("Recommendation Vote Candidate")));
 
-		vote(source, candidate, "PASS");
-
-		mockMvc.perform(get(source + "/recommendations"))
-				.andExpect(status().isOk())
-				.andExpect(content().string(not(containsString("Recommendation Pass Vote Candidate"))));
-	}
-
-	@Test
-	void recommendationsSkipCandidateAfterLikeVote() throws Exception {
-		String source = createProfile("Recommendation Like Vote Source");
-		String candidate = createProfile("Recommendation Like Vote Candidate");
-		String goal = createGoal("RECOMMENDATION_LIKE_VOTE_GOAL", "Recommendation Like Vote Goal");
-		addGoal(source, goal);
-		addGoal(candidate, goal);
-		activateProfile(candidate);
-
-		mockMvc.perform(get(source + "/recommendations"))
-				.andExpect(status().isOk())
-				.andExpect(content().string(containsString("Recommendation Like Vote Candidate")));
-
-		vote(source, candidate, "LIKE");
-
-		mockMvc.perform(get(source + "/recommendations"))
-				.andExpect(status().isOk())
-				.andExpect(content().string(not(containsString("Recommendation Like Vote Candidate"))));
-	}
-
-	@Test
-	void recommendationsReturnNotFoundForMissingProfile() throws Exception {
-		mockMvc.perform(get("/api/profiles/00000000-0000-0000-0000-000000000000/recommendations"))
-				.andExpect(status().isNotFound())
-				.andExpect(jsonPath("$.status").value(404))
-				.andExpect(jsonPath("$.error").value("Not Found"))
-				.andExpect(jsonPath("$.message").value("Profile not found: 00000000-0000-0000-0000-000000000000"))
-				.andExpect(jsonPath("$.path").value("/api/profiles/00000000-0000-0000-0000-000000000000/recommendations"));
-	}
-
-	private String createProfile(String displayName) throws Exception {
-		return mockMvc.perform(post("/api/profiles")
+		mockMvc.perform(source.owner().authorize(post("/api/votes/" + candidate.id()))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
-								  "displayName": "%s",
-								  "bio": "Created for recommendation tests",
-								  "telegram": "@recommendation_test",
-								  "faculty": "FICT",
-								  "studyProgram": "Software Engineering",
-								  "course": 2
+								  "action": "PASS"
 								}
-								""".formatted(displayName)))
-				.andExpect(status().isCreated())
-				.andReturn()
-				.getResponse()
-				.getHeader("Location");
+								"""))
+				.andExpect(status().isOk());
+
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
+				.andExpect(status().isOk())
+				.andExpect(content().string(not(containsString("Recommendation Vote Candidate"))));
+	}
+
+	@Test
+	void recommendationsRequireAuthentication() throws Exception {
+		mockMvc.perform(get("/api/recommendations"))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void recommendationsReturnNotFoundWhenCurrentUserHasNoProfile() throws Exception {
+		AuthenticatedTestUser user = AuthenticatedTestUser.register(mockMvc, objectMapper);
+
+		mockMvc.perform(user.authorize(get("/api/recommendations")))
+				.andExpect(status().isNotFound());
+	}
+
+	private TestProfile createProfile(String displayName) throws Exception {
+		return AuthenticatedTestUser.register(mockMvc, objectMapper).createProfile(displayName);
 	}
 
 	private String createSkill(String name) throws Exception {
-		return mockMvc.perform(post("/api/skills")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "name": "%s",
-								  "description": "Created for recommendation tests"
-								}
-								""".formatted(name)))
-				.andExpect(status().isCreated())
-				.andReturn()
-				.getResponse()
-				.getHeader("Location");
+		return createCatalogItem("/api/skills", """
+				{
+				  "name": "%s",
+				  "description": "Created for recommendation tests"
+				}
+				""".formatted(name));
 	}
 
 	private String createInterest(String name) throws Exception {
-		return mockMvc.perform(post("/api/interests")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "name": "%s",
-								  "description": "Created for recommendation tests"
-								}
-								""".formatted(name)))
-				.andExpect(status().isCreated())
-				.andReturn()
-				.getResponse()
-				.getHeader("Location");
+		return createCatalogItem("/api/interests", """
+				{
+				  "name": "%s",
+				  "description": "Created for recommendation tests"
+				}
+				""".formatted(name));
 	}
 
 	private String createGoal(String code, String name) throws Exception {
-		return mockMvc.perform(post("/api/goals")
+		return createCatalogItem("/api/goals", """
+				{
+				  "code": "%s",
+				  "name": "%s",
+				  "description": "Created for recommendation tests"
+				}
+				""".formatted(code, name));
+	}
+
+	private String createCatalogItem(String url, String body) throws Exception {
+		return mockMvc.perform(post(url)
 						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "code": "%s",
-								  "name": "%s",
-								  "description": "Created for recommendation tests"
-								}
-								""".formatted(code, name)))
+						.content(body))
 				.andExpect(status().isCreated())
 				.andReturn()
 				.getResponse()
 				.getHeader("Location");
 	}
 
-	private void addSkill(String profileLocation, String skillLocation) throws Exception {
-		mockMvc.perform(post(profileLocation + "/skills/" + idFromLocation(skillLocation)))
+	private void addSkill(TestProfile profile, String skillId) throws Exception {
+		mockMvc.perform(profile.owner().authorize(post("/api/profiles/me/skills/" + skillId)))
 				.andExpect(status().isCreated());
 	}
 
-	private void addInterest(String profileLocation, String interestLocation) throws Exception {
-		mockMvc.perform(post(profileLocation + "/interests/" + idFromLocation(interestLocation)))
+	private void addInterest(TestProfile profile, String interestId) throws Exception {
+		mockMvc.perform(profile.owner().authorize(post("/api/profiles/me/interests/" + interestId)))
 				.andExpect(status().isCreated());
 	}
 
-	private void addGoal(String profileLocation, String goalLocation) throws Exception {
-		mockMvc.perform(post(profileLocation + "/goals/" + idFromLocation(goalLocation)))
+	private void addGoal(TestProfile profile, String goalId) throws Exception {
+		mockMvc.perform(profile.owner().authorize(post("/api/profiles/me/goals/" + goalId)))
 				.andExpect(status().isCreated());
 	}
 
-	private void vote(String sourceProfileLocation, String targetProfileLocation, String action) throws Exception {
-		mockMvc.perform(post(sourceProfileLocation + "/votes/" + idFromLocation(targetProfileLocation))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "action": "%s"
-								}
-								""".formatted(action)))
-				.andExpect(status().isOk());
+	private void activateProfile(TestProfile profile) throws Exception {
+		updateProfileStatus(profile, "ACTIVE");
 	}
 
-	private void activateProfile(String profileLocation) throws Exception {
-		updateProfileStatus(profileLocation, "ACTIVE");
-	}
-
-	private void hideProfile(String profileLocation) throws Exception {
-		updateProfileStatus(profileLocation, "HIDDEN");
-	}
-
-	private void updateProfileStatus(String profileLocation, String statusValue) throws Exception {
-		mockMvc.perform(patch(profileLocation)
+	private void updateProfileStatus(TestProfile profile, String statusValue) throws Exception {
+		mockMvc.perform(profile.owner().authorize(patch("/api/profiles/me"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{

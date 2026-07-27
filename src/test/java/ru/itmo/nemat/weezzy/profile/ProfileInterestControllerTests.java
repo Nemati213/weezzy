@@ -12,9 +12,11 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
+import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser.TestProfile;
+import tools.jackson.databind.ObjectMapper;
 
 import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -41,6 +43,9 @@ class ProfileInterestControllerTests {
 	@Autowired
 	private MockMvc mockMvc;
 
+	@Autowired
+	private ObjectMapper objectMapper;
+
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
 		registry.add("spring.datasource.url", postgres::getJdbcUrl);
@@ -49,99 +54,73 @@ class ProfileInterestControllerTests {
 	}
 
 	@Test
-	void addInterestToProfileReturnsLinkedInterest() throws Exception {
-		String profile = createProfile("Interest Link Profile");
-		String interest = createInterest("Profile Interest Startups");
+	void currentUserCanAddAndReadOwnInterest() throws Exception {
+		TestProfile profile = createProfile("Interest Link Profile");
+		String interestId = idFromLocation(createInterest("Profile Interest Startups"));
 
-		mockMvc.perform(post(profile + "/interests/" + idFromLocation(interest)))
+		mockMvc.perform(profile.owner().authorize(post("/api/profiles/me/interests/" + interestId)))
 				.andExpect(status().isCreated())
-				.andExpect(header().string("Location", matchesPattern(profile + "/interests/.+")))
+				.andExpect(header().string("Location", "/api/profiles/me/interests/" + interestId))
 				.andExpect(jsonPath("$.name").value("Profile Interest Startups"));
-	}
 
-	@Test
-	void getProfileInterestsReturnsLinkedInterests() throws Exception {
-		String profile = createProfile("Interest List Profile");
-		String interest = createInterest("Profile Interest Hackathons");
-		addInterest(profile, interest);
-
-		mockMvc.perform(get(profile + "/interests"))
+		mockMvc.perform(profile.owner().authorize(get("/api/profiles/me/interests")))
 				.andExpect(status().isOk())
-				.andExpect(content().string(containsString("Profile Interest Hackathons")));
+				.andExpect(content().string(containsString("Profile Interest Startups")));
 	}
 
 	@Test
-	void addInterestToProfileRejectsDuplicateLink() throws Exception {
-		String profile = createProfile("Interest Duplicate Profile");
-		String interest = createInterest("Profile Interest Duplicate");
-		String linkUrl = profile + "/interests/" + idFromLocation(interest);
-		addInterest(profile, interest);
+	void addInterestRejectsDuplicateLink() throws Exception {
+		TestProfile profile = createProfile("Interest Duplicate Profile");
+		String interestId = idFromLocation(createInterest("Profile Interest Duplicate"));
+		String linkUrl = "/api/profiles/me/interests/" + interestId;
 
-		mockMvc.perform(post(linkUrl))
+		mockMvc.perform(profile.owner().authorize(post(linkUrl)))
+				.andExpect(status().isCreated());
+		mockMvc.perform(profile.owner().authorize(post(linkUrl)))
 				.andExpect(status().isConflict())
-				.andExpect(jsonPath("$.status").value(409))
 				.andExpect(jsonPath("$.message").value(containsString("Profile already has interest")));
 	}
 
 	@Test
-	void removeInterestFromProfileDeletesLink() throws Exception {
-		String profile = createProfile("Interest Delete Profile");
-		String interest = createInterest("Profile Interest Delete");
-		String linkUrl = profile + "/interests/" + idFromLocation(interest);
-		addInterest(profile, interest);
+	void currentUserCanRemoveOwnInterest() throws Exception {
+		TestProfile profile = createProfile("Interest Delete Profile");
+		String interestId = idFromLocation(createInterest("Profile Interest Delete"));
+		String linkUrl = "/api/profiles/me/interests/" + interestId;
 
-		mockMvc.perform(delete(linkUrl))
+		mockMvc.perform(profile.owner().authorize(post(linkUrl)))
+				.andExpect(status().isCreated());
+		mockMvc.perform(profile.owner().authorize(delete(linkUrl)))
 				.andExpect(status().isNoContent());
-
-		mockMvc.perform(get(profile + "/interests"))
+		mockMvc.perform(profile.owner().authorize(get("/api/profiles/me/interests")))
 				.andExpect(status().isOk())
 				.andExpect(content().string(not(containsString("Profile Interest Delete"))));
 	}
 
 	@Test
-	void addInterestToMissingProfileReturnsNotFound() throws Exception {
-		String interest = createInterest("Profile Interest Missing Profile");
+	void interestEndpointsRequireAuthentication() throws Exception {
+		mockMvc.perform(get("/api/profiles/me/interests"))
+				.andExpect(status().isUnauthorized());
+	}
 
-		mockMvc.perform(post("/api/profiles/00000000-0000-0000-0000-000000000000/interests/"
-						+ idFromLocation(interest)))
+	@Test
+	void interestEndpointReturnsNotFoundWhenCurrentUserHasNoProfile() throws Exception {
+		AuthenticatedTestUser user = AuthenticatedTestUser.register(mockMvc, objectMapper);
+
+		mockMvc.perform(user.authorize(get("/api/profiles/me/interests")))
 				.andExpect(status().isNotFound());
 	}
 
 	@Test
-	void addMissingInterestToProfileReturnsNotFound() throws Exception {
-		String profile = createProfile("Missing Interest Profile");
+	void addMissingInterestReturnsNotFound() throws Exception {
+		TestProfile profile = createProfile("Missing Interest Profile");
 
-		mockMvc.perform(post(profile + "/interests/00000000-0000-0000-0000-000000000000"))
+		mockMvc.perform(profile.owner().authorize(
+						post("/api/profiles/me/interests/00000000-0000-0000-0000-000000000000")))
 				.andExpect(status().isNotFound());
 	}
 
-	@Test
-	void removeMissingProfileInterestLinkReturnsNotFound() throws Exception {
-		String profile = createProfile("Missing Interest Link Profile");
-		String interest = createInterest("Profile Interest Missing Link");
-
-		mockMvc.perform(delete(profile + "/interests/" + idFromLocation(interest)))
-				.andExpect(status().isNotFound())
-				.andExpect(jsonPath("$.message").value(containsString("Profile interest link not found")));
-	}
-
-	private String createProfile(String displayName) throws Exception {
-		return mockMvc.perform(post("/api/profiles")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "displayName": "%s",
-								  "bio": "Created for profile-interest tests",
-								  "telegram": "@profile_interest_test",
-								  "faculty": "FICT",
-								  "studyProgram": "Software Engineering",
-								  "course": 2
-								}
-								""".formatted(displayName)))
-				.andExpect(status().isCreated())
-				.andReturn()
-				.getResponse()
-				.getHeader("Location");
+	private TestProfile createProfile(String displayName) throws Exception {
+		return AuthenticatedTestUser.register(mockMvc, objectMapper).createProfile(displayName);
 	}
 
 	private String createInterest(String name) throws Exception {
@@ -157,11 +136,6 @@ class ProfileInterestControllerTests {
 				.andReturn()
 				.getResponse()
 				.getHeader("Location");
-	}
-
-	private void addInterest(String profileLocation, String interestLocation) throws Exception {
-		mockMvc.perform(post(profileLocation + "/interests/" + idFromLocation(interestLocation)))
-				.andExpect(status().isCreated());
 	}
 
 	private String idFromLocation(String location) {

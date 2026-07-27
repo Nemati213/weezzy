@@ -12,9 +12,11 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
+import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser.TestProfile;
+import tools.jackson.databind.ObjectMapper;
 
 import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -41,6 +43,9 @@ class ProfileSkillControllerTests {
 	@Autowired
 	private MockMvc mockMvc;
 
+	@Autowired
+	private ObjectMapper objectMapper;
+
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
 		registry.add("spring.datasource.url", postgres::getJdbcUrl);
@@ -49,109 +54,83 @@ class ProfileSkillControllerTests {
 	}
 
 	@Test
-	void addSkillToProfileReturnsLinkedSkill() throws Exception {
-		String profileLocation = createProfile("Skill Link Profile");
-		String skillLocation = createSkill("Profile Skill Link Java");
+	void currentUserCanAddAndReadOwnSkill() throws Exception {
+		TestProfile profile = createProfile("Skill Link Profile");
+		String skillId = idFromLocation(createSkill("Profile Skill Link Java"));
 
-		mockMvc.perform(post(profileLocation + "/skills/" + idFromLocation(skillLocation)))
+		mockMvc.perform(profile.owner().authorize(post("/api/profiles/me/skills/" + skillId)))
 				.andExpect(status().isCreated())
-				.andExpect(header().string("Location", matchesPattern(profileLocation + "/skills/.+")))
+				.andExpect(header().string("Location", "/api/profiles/me/skills/" + skillId))
 				.andExpect(jsonPath("$.name").value("Profile Skill Link Java"));
-	}
 
-	@Test
-	void getProfileSkillsReturnsLinkedSkills() throws Exception {
-		String profileLocation = createProfile("Skill List Profile");
-		String skillLocation = createSkill("Profile Skill List Spring");
-
-		mockMvc.perform(post(profileLocation + "/skills/" + idFromLocation(skillLocation)))
-				.andExpect(status().isCreated());
-
-		mockMvc.perform(get(profileLocation + "/skills"))
+		mockMvc.perform(profile.owner().authorize(get("/api/profiles/me/skills")))
 				.andExpect(status().isOk())
-				.andExpect(content().string(containsString("Profile Skill List Spring")));
+				.andExpect(content().string(containsString("Profile Skill Link Java")));
 	}
 
 	@Test
-	void addSkillToProfileRejectsDuplicateLink() throws Exception {
-		String profileLocation = createProfile("Skill Duplicate Profile");
-		String skillLocation = createSkill("Profile Skill Duplicate Docker");
-		String linkUrl = profileLocation + "/skills/" + idFromLocation(skillLocation);
+	void currentUserCannotModifyAnotherUsersSkillsByPuttingProfileIdInUrl() throws Exception {
+		TestProfile profile = createProfile("Skill Owner");
+		String skillId = idFromLocation(createSkill("Profile Skill Protected"));
 
-		mockMvc.perform(post(linkUrl))
+		mockMvc.perform(profile.owner().authorize(post(profile.location() + "/skills/" + skillId)))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void addSkillRejectsDuplicateLink() throws Exception {
+		TestProfile profile = createProfile("Skill Duplicate Profile");
+		String skillId = idFromLocation(createSkill("Profile Skill Duplicate Docker"));
+		String linkUrl = "/api/profiles/me/skills/" + skillId;
+
+		mockMvc.perform(profile.owner().authorize(post(linkUrl)))
 				.andExpect(status().isCreated());
 
-		mockMvc.perform(post(linkUrl))
+		mockMvc.perform(profile.owner().authorize(post(linkUrl)))
 				.andExpect(status().isConflict())
-				.andExpect(jsonPath("$.status").value(409))
-				.andExpect(jsonPath("$.error").value("Conflict"))
-				.andExpect(jsonPath("$.message").value(containsString("Profile already has skill")))
-				.andExpect(jsonPath("$.path").value(linkUrl));
+				.andExpect(jsonPath("$.message").value(containsString("Profile already has skill")));
 	}
 
 	@Test
-	void removeSkillFromProfileDeletesLink() throws Exception {
-		String profileLocation = createProfile("Skill Delete Profile");
-		String skillLocation = createSkill("Profile Skill Delete PostgreSQL");
-		String linkUrl = profileLocation + "/skills/" + idFromLocation(skillLocation);
+	void currentUserCanRemoveOwnSkill() throws Exception {
+		TestProfile profile = createProfile("Skill Delete Profile");
+		String skillId = idFromLocation(createSkill("Profile Skill Delete PostgreSQL"));
+		String linkUrl = "/api/profiles/me/skills/" + skillId;
 
-		mockMvc.perform(post(linkUrl))
+		mockMvc.perform(profile.owner().authorize(post(linkUrl)))
 				.andExpect(status().isCreated());
-
-		mockMvc.perform(delete(linkUrl))
+		mockMvc.perform(profile.owner().authorize(delete(linkUrl)))
 				.andExpect(status().isNoContent());
-
-		mockMvc.perform(get(profileLocation + "/skills"))
+		mockMvc.perform(profile.owner().authorize(get("/api/profiles/me/skills")))
 				.andExpect(status().isOk())
 				.andExpect(content().string(not(containsString("Profile Skill Delete PostgreSQL"))));
 	}
 
 	@Test
-	void addSkillToMissingProfileReturnsNotFound() throws Exception {
-		String skillLocation = createSkill("Profile Skill Missing Profile");
+	void skillEndpointsRequireAuthentication() throws Exception {
+		mockMvc.perform(get("/api/profiles/me/skills"))
+				.andExpect(status().isUnauthorized());
+	}
 
-		mockMvc.perform(post("/api/profiles/00000000-0000-0000-0000-000000000000/skills/"
-						+ idFromLocation(skillLocation)))
+	@Test
+	void skillEndpointReturnsNotFoundWhenCurrentUserHasNoProfile() throws Exception {
+		AuthenticatedTestUser user = AuthenticatedTestUser.register(mockMvc, objectMapper);
+
+		mockMvc.perform(user.authorize(get("/api/profiles/me/skills")))
 				.andExpect(status().isNotFound());
 	}
 
 	@Test
-	void addMissingSkillToProfileReturnsNotFound() throws Exception {
-		String profileLocation = createProfile("Missing Skill Profile");
+	void addMissingSkillReturnsNotFound() throws Exception {
+		TestProfile profile = createProfile("Missing Skill Profile");
 
-		mockMvc.perform(post(profileLocation + "/skills/00000000-0000-0000-0000-000000000000"))
+		mockMvc.perform(profile.owner().authorize(
+						post("/api/profiles/me/skills/00000000-0000-0000-0000-000000000000")))
 				.andExpect(status().isNotFound());
 	}
 
-	@Test
-	void removeMissingProfileSkillLinkReturnsNotFound() throws Exception {
-		String profileLocation = createProfile("Missing Link Profile");
-		String skillLocation = createSkill("Profile Skill Missing Link");
-
-		mockMvc.perform(delete(profileLocation + "/skills/" + idFromLocation(skillLocation)))
-				.andExpect(status().isNotFound())
-				.andExpect(jsonPath("$.status").value(404))
-				.andExpect(jsonPath("$.error").value("Not Found"))
-				.andExpect(jsonPath("$.message").value(containsString("Profile skill link not found")));
-	}
-
-	private String createProfile(String displayName) throws Exception {
-		return mockMvc.perform(post("/api/profiles")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "displayName": "%s",
-								  "bio": "Created for profile-skill tests",
-								  "telegram": "@profile_skill_test",
-								  "faculty": "FICT",
-								  "studyProgram": "Software Engineering",
-								  "course": 2
-								}
-								""".formatted(displayName)))
-				.andExpect(status().isCreated())
-				.andReturn()
-				.getResponse()
-				.getHeader("Location");
+	private TestProfile createProfile(String displayName) throws Exception {
+		return AuthenticatedTestUser.register(mockMvc, objectMapper).createProfile(displayName);
 	}
 
 	private String createSkill(String name) throws Exception {

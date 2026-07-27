@@ -12,6 +12,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
+import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser.TestProfile;
+import tools.jackson.databind.ObjectMapper;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesPattern;
@@ -40,6 +43,9 @@ class ProfileControllerTests {
 	@Autowired
 	private MockMvc mockMvc;
 
+	@Autowired
+	private ObjectMapper objectMapper;
+
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
 		registry.add("spring.datasource.url", postgres::getJdbcUrl);
@@ -48,247 +54,106 @@ class ProfileControllerTests {
 	}
 
 	@Test
-	void createProfileReturnsCreatedProfile() throws Exception {
-		mockMvc.perform(post("/api/profiles")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "displayName": "Nemat",
-								  "bio": "Backend developer at ITMO",
-								  "telegram": "@nemati213",
-								  "faculty": "FICT",
-								  "studyProgram": "Software Engineering",
-								  "course": 2
-								}
-								"""))
+	void authenticatedUserCreatesOwnProfile() throws Exception {
+		AuthenticatedTestUser user = AuthenticatedTestUser.register(mockMvc, objectMapper);
+
+		createProfile(user, "Nemat", 2)
 				.andExpect(status().isCreated())
 				.andExpect(header().string("Location", matchesPattern("/api/profiles/.+")))
-				.andExpect(jsonPath("$.id").isNotEmpty())
 				.andExpect(jsonPath("$.displayName").value("Nemat"))
-				.andExpect(jsonPath("$.bio").value("Backend developer at ITMO"))
-				.andExpect(jsonPath("$.telegram").value("@nemati213"))
-				.andExpect(jsonPath("$.faculty").value("FICT"))
-				.andExpect(jsonPath("$.studyProgram").value("Software Engineering"))
 				.andExpect(jsonPath("$.course").value(2))
-				.andExpect(jsonPath("$.status").value("DRAFT"));
+				.andExpect(jsonPath("$.status").value("DRAFT"))
+				.andExpect(jsonPath("$.userId").value(user.userId()));
 	}
 
 	@Test
-	void createProfileRejectsBlankDisplayName() throws Exception {
+	void createProfileRequiresAuthentication() throws Exception {
 		mockMvc.perform(post("/api/profiles")
 						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "displayName": "",
-								  "bio": "Backend developer at ITMO",
-								  "telegram": "@nemati213",
-								  "faculty": "FICT",
-								  "studyProgram": "Software Engineering",
-								  "course": 2
-								}
-								"""))
+						.content(validProfileJson("Anonymous", 2)))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void userCannotCreateSecondProfile() throws Exception {
+		AuthenticatedTestUser user = AuthenticatedTestUser.register(mockMvc, objectMapper);
+		createProfile(user, "First Profile", 2).andExpect(status().isCreated());
+
+		createProfile(user, "Second Profile", 2)
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.message").value("Profile already exists for user: " + user.userId()));
+	}
+
+	@Test
+	void createProfileValidatesRequest() throws Exception {
+		AuthenticatedTestUser user = AuthenticatedTestUser.register(mockMvc, objectMapper);
+
+		createProfile(user, "", 7)
 				.andExpect(status().isBadRequest());
 	}
 
 	@Test
-	void createProfileRejectsInvalidCourse() throws Exception {
-		mockMvc.perform(post("/api/profiles")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "displayName": "Nemat",
-								  "bio": "Backend developer at ITMO",
-								  "telegram": "@nemati213",
-								  "faculty": "FICT",
-								  "studyProgram": "Software Engineering",
-								  "course": 7
-								}
-								"""))
-				.andExpect(status().isBadRequest());
-	}
+	void publicProfileCanBeReadById() throws Exception {
+		TestProfile profile = AuthenticatedTestUser.register(mockMvc, objectMapper)
+				.createProfile("Profile To Fetch");
 
-	@Test
-	void getProfileReturnsExistingProfile() throws Exception {
-		String location = mockMvc.perform(post("/api/profiles")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "displayName": "Profile To Fetch",
-								  "bio": "Created for GET test",
-								  "telegram": "@fetch_profile",
-								  "faculty": "Faculty of Infocommunication Technologies",
-								  "studyProgram": "Applied Computer Science",
-								  "course": 3
-								}
-								"""))
-				.andExpect(status().isCreated())
-				.andReturn()
-				.getResponse()
-				.getHeader("Location");
-
-		mockMvc.perform(get(location))
+		mockMvc.perform(get(profile.location()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.displayName").value("Profile To Fetch"))
-				.andExpect(jsonPath("$.bio").value("Created for GET test"))
-				.andExpect(jsonPath("$.telegram").value("@fetch_profile"))
-				.andExpect(jsonPath("$.faculty").value("Faculty of Infocommunication Technologies"))
-				.andExpect(jsonPath("$.studyProgram").value("Applied Computer Science"))
-				.andExpect(jsonPath("$.course").value(3))
-				.andExpect(jsonPath("$.status").value("DRAFT"));
+				.andExpect(jsonPath("$.userId").value(profile.owner().userId()));
 	}
 
 	@Test
-	void getProfileReturnsNotFoundForMissingProfile() throws Exception {
-		mockMvc.perform(get("/api/profiles/00000000-0000-0000-0000-000000000000"))
-				.andExpect(status().isNotFound())
-				.andExpect(jsonPath("$.status").value(404))
-				.andExpect(jsonPath("$.error").value("Not Found"))
-				.andExpect(jsonPath("$.message").value("Profile not found: 00000000-0000-0000-0000-000000000000"))
-				.andExpect(jsonPath("$.path").value("/api/profiles/00000000-0000-0000-0000-000000000000"));
+	void currentUserReadsOwnProfileWithoutProfileId() throws Exception {
+		TestProfile profile = AuthenticatedTestUser.register(mockMvc, objectMapper)
+				.createProfile("My Profile");
+
+		mockMvc.perform(profile.owner().authorize(get("/api/profiles/me")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.id").value(profile.id()))
+				.andExpect(jsonPath("$.displayName").value("My Profile"));
 	}
 
 	@Test
 	void getAllProfilesReturnsCreatedProfiles() throws Exception {
-		mockMvc.perform(post("/api/profiles")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "displayName": "Profile In List",
-								  "bio": "Created for list test",
-								  "telegram": "@list_profile",
-								  "faculty": "FICT",
-								  "studyProgram": "Software Engineering",
-								  "course": 1
-								}
-								"""))
-				.andExpect(status().isCreated());
+		AuthenticatedTestUser.register(mockMvc, objectMapper).createProfile("Profile In List");
 
 		mockMvc.perform(get("/api/profiles"))
 				.andExpect(status().isOk())
-				.andExpect(content().string(containsString("Profile In List")))
-				.andExpect(content().string(containsString("Software Engineering")));
+				.andExpect(content().string(containsString("Profile In List")));
 	}
 
 	@Test
-	void updateProfileChangesOnlyProvidedFields() throws Exception {
-		String location = mockMvc.perform(post("/api/profiles")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "displayName": "Before Update",
-								  "bio": "Old bio",
-								  "telegram": "@old_profile",
-								  "faculty": "Old Faculty",
-								  "studyProgram": "Old Program",
-								  "course": 1
-								}
-								"""))
-				.andExpect(status().isCreated())
-				.andReturn()
-				.getResponse()
-				.getHeader("Location");
+	void currentUserUpdatesOwnProfileWithoutProfileId() throws Exception {
+		TestProfile profile = AuthenticatedTestUser.register(mockMvc, objectMapper)
+				.createProfile("Before Update");
 
-		mockMvc.perform(patch(location)
+		mockMvc.perform(profile.owner().authorize(patch("/api/profiles/me"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
 								  "bio": "New bio",
-								  "course": 4
+								  "course": 4,
+								  "status": "ACTIVE"
 								}
 								"""))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.displayName").value("Before Update"))
 				.andExpect(jsonPath("$.bio").value("New bio"))
-				.andExpect(jsonPath("$.telegram").value("@old_profile"))
-				.andExpect(jsonPath("$.faculty").value("Old Faculty"))
-				.andExpect(jsonPath("$.studyProgram").value("Old Program"))
 				.andExpect(jsonPath("$.course").value(4))
-				.andExpect(jsonPath("$.status").value("DRAFT"));
-	}
-
-	@Test
-	void updateProfileChangesStatus() throws Exception {
-		String location = mockMvc.perform(post("/api/profiles")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "displayName": "Status Profile",
-								  "bio": "Bio",
-								  "telegram": "@status_profile",
-								  "faculty": "FICT",
-								  "studyProgram": "Software Engineering",
-								  "course": 2
-								}
-								"""))
-				.andExpect(status().isCreated())
-				.andReturn()
-				.getResponse()
-				.getHeader("Location");
-
-		mockMvc.perform(patch(location)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "status": "ACTIVE"
-								}
-								"""))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.displayName").value("Status Profile"))
 				.andExpect(jsonPath("$.status").value("ACTIVE"));
 	}
 
 	@Test
-	void updateProfileRejectsBlankDisplayName() throws Exception {
-		String location = mockMvc.perform(post("/api/profiles")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "displayName": "Valid Name",
-								  "bio": "Bio",
-								  "telegram": "@valid_profile",
-								  "faculty": "FICT",
-								  "studyProgram": "Software Engineering",
-								  "course": 2
-								}
-								"""))
-				.andExpect(status().isCreated())
-				.andReturn()
-				.getResponse()
-				.getHeader("Location");
+	void updateProfileValidatesRequest() throws Exception {
+		TestProfile profile = AuthenticatedTestUser.register(mockMvc, objectMapper)
+				.createProfile("Valid Profile");
 
-		mockMvc.perform(patch(location)
+		mockMvc.perform(profile.owner().authorize(patch("/api/profiles/me"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
-								  "displayName": ""
-								}
-								"""))
-				.andExpect(status().isBadRequest());
-	}
-
-	@Test
-	void updateProfileRejectsInvalidCourse() throws Exception {
-		String location = mockMvc.perform(post("/api/profiles")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "displayName": "Valid Name",
-								  "bio": "Bio",
-								  "telegram": "@valid_profile",
-								  "faculty": "FICT",
-								  "studyProgram": "Software Engineering",
-								  "course": 2
-								}
-								"""))
-				.andExpect(status().isCreated())
-				.andReturn()
-				.getResponse()
-				.getHeader("Location");
-
-		mockMvc.perform(patch(location)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
+								  "displayName": "",
 								  "course": 0
 								}
 								"""))
@@ -296,14 +161,47 @@ class ProfileControllerTests {
 	}
 
 	@Test
-	void updateProfileReturnsNotFoundForMissingProfile() throws Exception {
-		mockMvc.perform(patch("/api/profiles/00000000-0000-0000-0000-000000000000")
+	void currentProfileEndpointsRequireAuthentication() throws Exception {
+		mockMvc.perform(get("/api/profiles/me"))
+				.andExpect(status().isUnauthorized());
+		mockMvc.perform(patch("/api/profiles/me")
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
-								  "bio": "No one is here"
+								  "bio": "No token"
 								}
 								"""))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void currentProfileReturnsNotFoundWhenUserHasNoProfile() throws Exception {
+		AuthenticatedTestUser user = AuthenticatedTestUser.register(mockMvc, objectMapper);
+
+		mockMvc.perform(user.authorize(get("/api/profiles/me")))
 				.andExpect(status().isNotFound());
+	}
+
+	private org.springframework.test.web.servlet.ResultActions createProfile(
+			AuthenticatedTestUser user,
+			String displayName,
+			int course
+	) throws Exception {
+		return mockMvc.perform(user.authorize(post("/api/profiles"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(validProfileJson(displayName, course)));
+	}
+
+	private String validProfileJson(String displayName, int course) {
+		return """
+				{
+				  "displayName": "%s",
+				  "bio": "Backend developer at ITMO",
+				  "telegram": "@profile_test",
+				  "faculty": "FICT",
+				  "studyProgram": "Software Engineering",
+				  "course": %d
+				}
+				""".formatted(displayName, course);
 	}
 }

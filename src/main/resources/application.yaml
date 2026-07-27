@@ -3,3 +3,9 @@ spring:
     name: weezzy
   profiles:
     default: local
+
+app:
+  security:
+    jwt:
+      secret: weezzy-dev-secret-must-be-changed-before-production-123456
+      access-token-ttl: PT1H
