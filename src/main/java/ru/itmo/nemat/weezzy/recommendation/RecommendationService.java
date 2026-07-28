@@ -21,10 +21,16 @@ import ru.itmo.nemat.weezzy.profile.skill.ProfileSkill;
 import ru.itmo.nemat.weezzy.profile.skill.ProfileSkillRepository;
 import ru.itmo.nemat.weezzy.profile.skill.ProfileSkillService;
 import ru.itmo.nemat.weezzy.profile.dto.ProfileResponse;
+import ru.itmo.nemat.weezzy.recommendation.dto.ProfileRecommendationReasonResponse;
 import ru.itmo.nemat.weezzy.recommendation.dto.ProfileRecommendationResponse;
+import ru.itmo.nemat.weezzy.recommendation.dto.ProfileRecommendationScoreBreakdownResponse;
+import ru.itmo.nemat.weezzy.recommendation.dto.ProfileRecommendationSignalCountsResponse;
+import ru.itmo.nemat.weezzy.recommendation.dto.RecommendationPageResponse;
 import ru.itmo.nemat.weezzy.skill.Skill;
 import ru.itmo.nemat.weezzy.skill.SkillRepository;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -40,6 +46,9 @@ public class RecommendationService {
 	private static final int INTEREST_WEIGHT = 2;
 	private static final int GOAL_WEIGHT = 5;
 	private static final int MAX_LIMIT = 100;
+	private static final Base64.Encoder CURSOR_ENCODER = Base64.getUrlEncoder()
+			.withoutPadding();
+	private static final Base64.Decoder CURSOR_DECODER = Base64.getUrlDecoder();
 
 	private final ProfileService profileService;
 	private final ProfileSkillService profileSkillService;
@@ -54,8 +63,14 @@ public class RecommendationService {
 	private final GoalRepository goalRepository;
 
 	@Transactional(readOnly = true)
-	public List<ProfileRecommendationResponse> findRecommendations(UUID profileId, int limit) {
+	public RecommendationPageResponse findRecommendations(
+			UUID profileId,
+			int limit,
+			String cursor
+	) {
 		profileService.findById(profileId);
+		int normalizedLimit = normalizeLimit(limit);
+		RecommendationCursor recommendationCursor = decodeCursor(cursor);
 
 		Set<UUID> sourceSkillIds = profileSkillService.findSkills(profileId).stream()
 				.map(Skill::getId)
@@ -69,8 +84,9 @@ public class RecommendationService {
 
 		Set<UUID> sourceVotes = profileVoteService.findVotedTargetProfileIds(profileId);
 
-		if (sourceSkillIds.isEmpty() && sourceInterestIds.isEmpty() && sourceGoalIds.isEmpty()) {
-			return List.of();
+		if (normalizedLimit == 0
+				|| sourceSkillIds.isEmpty() && sourceInterestIds.isEmpty() && sourceGoalIds.isEmpty()) {
+			return new RecommendationPageResponse(List.of(), null);
 		}
 
 		List<Profile> candidates = profileService.findAll().stream()
@@ -80,7 +96,7 @@ public class RecommendationService {
 				.toList();
 
 		if (candidates.isEmpty()) {
-			return List.of();
+			return new RecommendationPageResponse(List.of(), null);
 		}
 
 		Set<UUID> candidateIds = candidates.stream()
@@ -90,7 +106,7 @@ public class RecommendationService {
 		Map<UUID, List<String>> matchedInterestsByProfile = findMatchedInterestNames(candidateIds, sourceInterestIds);
 		Map<UUID, List<String>> matchedGoalsByProfile = findMatchedGoalNames(candidateIds, sourceGoalIds);
 
-		return candidates.stream()
+		List<ProfileRecommendationResponse> sortedRecommendations = candidates.stream()
 				.map(candidate -> recommendationFor(
 						candidate,
 						matchedSkillsByProfile.getOrDefault(candidate.getId(), List.of()),
@@ -101,9 +117,27 @@ public class RecommendationService {
 				.sorted(Comparator
 						.comparingInt(ProfileRecommendationResponse::score)
 						.reversed()
-						.thenComparing(recommendation -> recommendation.profile().displayName()))
-				.limit(normalizeLimit(limit))
+						.thenComparing(recommendation -> recommendation.profile().id()))
 				.toList();
+
+		List<ProfileRecommendationResponse> page = sortedRecommendations.stream()
+				.filter(recommendation -> isAfterCursor(recommendation, recommendationCursor))
+				.limit(normalizedLimit + 1L)
+				.toList();
+
+		if (page.size() <= normalizedLimit) {
+			return new RecommendationPageResponse(page, null);
+		}
+
+		List<ProfileRecommendationResponse> content = page.stream()
+				.limit(normalizedLimit)
+				.toList();
+		ProfileRecommendationResponse lastRecommendation = content.get(content.size() - 1);
+
+		return new RecommendationPageResponse(
+				content,
+				encodeCursor(lastRecommendation)
+		);
 	}
 
 	private ProfileRecommendationResponse recommendationFor(
@@ -115,14 +149,62 @@ public class RecommendationService {
 		int score = matchedSkills.size() * SKILL_WEIGHT
 				+ matchedInterests.size() * INTEREST_WEIGHT
 				+ matchedGoals.size() * GOAL_WEIGHT;
+		ProfileRecommendationReasonResponse reason = new ProfileRecommendationReasonResponse(
+				new ProfileRecommendationScoreBreakdownResponse(
+						matchedSkills.size() * SKILL_WEIGHT,
+						matchedInterests.size() * INTEREST_WEIGHT,
+						matchedGoals.size() * GOAL_WEIGHT
+				),
+				new ProfileRecommendationSignalCountsResponse(
+						matchedSkills.size(),
+						matchedInterests.size(),
+						matchedGoals.size()
+				)
+		);
 
 		return new ProfileRecommendationResponse(
 				ProfileResponse.from(candidate),
 				score,
 				matchedSkills,
 				matchedInterests,
-				matchedGoals
+				matchedGoals,
+				reason
 		);
+	}
+
+	private boolean isAfterCursor(
+			ProfileRecommendationResponse recommendation,
+			RecommendationCursor cursor
+	) {
+		if (cursor == null) {
+			return true;
+		}
+		if (recommendation.score() != cursor.score()) {
+			return recommendation.score() < cursor.score();
+		}
+		return recommendation.profile().id().compareTo(cursor.profileId()) > 0;
+	}
+
+	private String encodeCursor(ProfileRecommendationResponse recommendation) {
+		String rawCursor = recommendation.score() + ":" + recommendation.profile().id();
+		return CURSOR_ENCODER.encodeToString(rawCursor.getBytes(StandardCharsets.UTF_8));
+	}
+
+	private RecommendationCursor decodeCursor(String cursor) {
+		if (cursor == null || cursor.isBlank()) {
+			return null;
+		}
+
+		try {
+			String rawCursor = new String(CURSOR_DECODER.decode(cursor), StandardCharsets.UTF_8);
+			String[] parts = rawCursor.split(":", 2);
+			if (parts.length != 2) {
+				throw new IllegalArgumentException();
+			}
+			return new RecommendationCursor(Integer.parseInt(parts[0]), UUID.fromString(parts[1]));
+		} catch (IllegalArgumentException exception) {
+			throw new InvalidRecommendationCursorException();
+		}
 	}
 
 	private Map<UUID, List<String>> findMatchedSkillNames(Set<UUID> candidateIds, Set<UUID> sourceSkillIds) {
@@ -201,5 +283,9 @@ public class RecommendationService {
 		}
 
 		return Math.min(limit, MAX_LIMIT);
+	}
+
+	private record RecommendationCursor(int score, UUID profileId) {
+
 	}
 }

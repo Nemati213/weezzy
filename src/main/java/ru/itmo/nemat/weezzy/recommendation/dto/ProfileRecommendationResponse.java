@@ -9,7 +9,8 @@ public record ProfileRecommendationResponse(
 		int score,
 		List<String> matchedSkills,
 		List<String> matchedInterests,
-		List<String> matchedGoals
+		List<String> matchedGoals,
+		ProfileRecommendationReasonResponse reason
 ) {
 
 }

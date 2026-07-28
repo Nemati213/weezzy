@@ -99,12 +99,19 @@ class RecommendationControllerTests {
 
 		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$[0].profile.displayName").value("Recommendation Alice"))
-				.andExpect(jsonPath("$[0].score").value(7))
-				.andExpect(jsonPath("$[1].profile.displayName").value("Recommendation Timur"))
-				.andExpect(jsonPath("$[1].score").value(6))
-				.andExpect(jsonPath("$[2].profile.displayName").value("Recommendation Diana"))
-				.andExpect(jsonPath("$[2].score").value(5))
+				.andExpect(jsonPath("$.content[0].profile.displayName").value("Recommendation Alice"))
+				.andExpect(jsonPath("$.content[0].score").value(7))
+				.andExpect(jsonPath("$.content[0].reason.scoreBreakdown.skills").value(3))
+				.andExpect(jsonPath("$.content[0].reason.scoreBreakdown.interests").value(4))
+				.andExpect(jsonPath("$.content[0].reason.scoreBreakdown.goals").value(0))
+				.andExpect(jsonPath("$.content[0].reason.matchedCounts.skills").value(1))
+				.andExpect(jsonPath("$.content[0].reason.matchedCounts.interests").value(2))
+				.andExpect(jsonPath("$.content[0].reason.matchedCounts.goals").value(0))
+				.andExpect(jsonPath("$.content[1].profile.displayName").value("Recommendation Timur"))
+				.andExpect(jsonPath("$.content[1].score").value(6))
+				.andExpect(jsonPath("$.content[2].profile.displayName").value("Recommendation Diana"))
+				.andExpect(jsonPath("$.content[2].score").value(5))
+				.andExpect(jsonPath("$.nextCursor").doesNotExist())
 				.andExpect(content().string(not(containsString("Recommendation Bob"))))
 				.andExpect(content().string(not(containsString("Recommendation Source"))));
 	}
@@ -123,7 +130,46 @@ class RecommendationControllerTests {
 
 		mockMvc.perform(source.owner().authorize(get("/api/recommendations?limit=1")))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.length()").value(1));
+				.andExpect(jsonPath("$.content.length()").value(1))
+				.andExpect(jsonPath("$.nextCursor").isNotEmpty());
+	}
+
+	@Test
+	void recommendationsContinueAfterCursor() throws Exception {
+		TestProfile source = createProfile("Recommendation Cursor Source");
+		TestProfile first = createProfile("Recommendation Cursor First");
+		TestProfile second = createProfile("Recommendation Cursor Second");
+		String skill = idFromLocation(createSkill("Recommendation Cursor Skill"));
+		String goal = idFromLocation(createGoal("RECOMMENDATION_CURSOR_GOAL", "Recommendation Cursor Goal"));
+		addSkill(source, skill);
+		addGoal(source, goal);
+		addSkill(first, skill);
+		addGoal(first, goal);
+		addGoal(second, goal);
+		activateProfile(first);
+		activateProfile(second);
+
+		String firstPageBody = mockMvc.perform(source.owner().authorize(get("/api/recommendations")
+						.param("limit", "1")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content.length()").value(1))
+				.andExpect(jsonPath("$.content[0].profile.displayName")
+						.value("Recommendation Cursor First"))
+				.andExpect(jsonPath("$.nextCursor").isNotEmpty())
+				.andReturn()
+				.getResponse()
+				.getContentAsString();
+		String nextCursor = objectMapper.readTree(firstPageBody).path("nextCursor").asText();
+
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")
+						.param("limit", "1")
+						.param("cursor", nextCursor)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content.length()").value(1))
+				.andExpect(jsonPath("$.content[0].profile.displayName")
+						.value("Recommendation Cursor Second"))
+				.andExpect(jsonPath("$.nextCursor").doesNotExist())
+				.andExpect(content().string(not(containsString("Recommendation Cursor First"))));
 	}
 
 	@Test
@@ -134,7 +180,8 @@ class RecommendationControllerTests {
 
 		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
 				.andExpect(status().isOk())
-				.andExpect(content().json("[]"));
+				.andExpect(jsonPath("$.content").isEmpty())
+				.andExpect(jsonPath("$.nextCursor").doesNotExist());
 	}
 
 	@Test
@@ -182,6 +229,16 @@ class RecommendationControllerTests {
 		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
 				.andExpect(status().isOk())
 				.andExpect(content().string(not(containsString("Recommendation Vote Candidate"))));
+	}
+
+	@Test
+	void recommendationsRejectInvalidCursor() throws Exception {
+		TestProfile source = createProfile("Recommendation Invalid Cursor Source");
+
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")
+						.param("cursor", "not-a-cursor")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Invalid recommendation cursor"));
 	}
 
 	@Test
