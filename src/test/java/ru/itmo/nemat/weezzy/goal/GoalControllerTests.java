@@ -8,10 +8,13 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
+import tools.jackson.databind.ObjectMapper;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesPattern;
@@ -41,6 +44,9 @@ class GoalControllerTests {
 	@Autowired
 	private MockMvc mockMvc;
 
+	@Autowired
+	private ObjectMapper objectMapper;
+
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
 		registry.add("spring.datasource.url", postgres::getJdbcUrl);
@@ -50,7 +56,7 @@ class GoalControllerTests {
 
 	@Test
 	void createGoalReturnsCreatedGoal() throws Exception {
-		mockMvc.perform(post("/api/goals")
+		mockMvc.perform(authorize(post("/api/goals"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -70,7 +76,7 @@ class GoalControllerTests {
 
 	@Test
 	void createGoalTrimsName() throws Exception {
-		mockMvc.perform(post("/api/goals")
+		mockMvc.perform(authorize(post("/api/goals"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -85,7 +91,7 @@ class GoalControllerTests {
 
 	@Test
 	void createGoalRejectsInvalidCode() throws Exception {
-		mockMvc.perform(post("/api/goals")
+		mockMvc.perform(authorize(post("/api/goals"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -105,7 +111,7 @@ class GoalControllerTests {
 	void createGoalRejectsDuplicateCodeIgnoringCase() throws Exception {
 		createGoal("BUILD_STARTUP", "Build Startup");
 
-		mockMvc.perform(post("/api/goals")
+		mockMvc.perform(authorize(post("/api/goals"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -123,7 +129,7 @@ class GoalControllerTests {
 	void createGoalRejectsDuplicateNameIgnoringCase() throws Exception {
 		createGoal("PRODUCT_CREW", "Product Crew");
 
-		mockMvc.perform(post("/api/goals")
+		mockMvc.perform(authorize(post("/api/goals"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -140,7 +146,7 @@ class GoalControllerTests {
 	void getGoalReturnsExistingGoal() throws Exception {
 		String location = createGoal("AI_STUDY_GROUP", "AI Study Group");
 
-		mockMvc.perform(get(location))
+		mockMvc.perform(authorize(get(location)))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.code").value("AI_STUDY_GROUP"))
 				.andExpect(jsonPath("$.name").value("AI Study Group"));
@@ -148,7 +154,7 @@ class GoalControllerTests {
 
 	@Test
 	void getGoalReturnsNotFoundForMissingGoal() throws Exception {
-		mockMvc.perform(get("/api/goals/00000000-0000-0000-0000-000000000000"))
+		mockMvc.perform(authorize(get("/api/goals/00000000-0000-0000-0000-000000000000")))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.status").value(404))
 				.andExpect(jsonPath("$.message")
@@ -157,7 +163,7 @@ class GoalControllerTests {
 
 	@Test
 	void getAllGoalsReturnsSeededGoals() throws Exception {
-		mockMvc.perform(get("/api/goals"))
+		mockMvc.perform(authorize(get("/api/goals")))
 				.andExpect(status().isOk())
 				.andExpect(content().string(containsString("TEAM_SEARCH")))
 				.andExpect(content().string(containsString("HACKATHON_TEAM")));
@@ -167,7 +173,7 @@ class GoalControllerTests {
 	void updateGoalChangesProvidedFields() throws Exception {
 		String location = createGoal("OLD_GOAL_CODE", "Old Goal Name");
 
-		mockMvc.perform(patch(location)
+		mockMvc.perform(authorize(patch(location))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -186,7 +192,7 @@ class GoalControllerTests {
 	void updateGoalRejectsBlankName() throws Exception {
 		String location = createGoal("BLANK_NAME_GOAL", "Blank Name Goal");
 
-		mockMvc.perform(patch(location)
+		mockMvc.perform(authorize(patch(location))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -201,15 +207,21 @@ class GoalControllerTests {
 	void deleteGoalRemovesIt() throws Exception {
 		String location = createGoal("GOAL_TO_DELETE", "Goal To Delete");
 
-		mockMvc.perform(delete(location))
+		mockMvc.perform(authorize(delete(location)))
 				.andExpect(status().isNoContent());
 
-		mockMvc.perform(get(location))
+		mockMvc.perform(authorize(get(location)))
 				.andExpect(status().isNotFound());
 	}
 
+	@Test
+	void goalCatalogRequiresAuthentication() throws Exception {
+		mockMvc.perform(get("/api/goals"))
+				.andExpect(status().isUnauthorized());
+	}
+
 	private String createGoal(String code, String name) throws Exception {
-		return mockMvc.perform(post("/api/goals")
+		return mockMvc.perform(authorize(post("/api/goals"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -222,5 +234,9 @@ class GoalControllerTests {
 				.andReturn()
 				.getResponse()
 				.getHeader("Location");
+	}
+
+	private MockHttpServletRequestBuilder authorize(MockHttpServletRequestBuilder request) throws Exception {
+		return AuthenticatedTestUser.register(mockMvc, objectMapper).authorize(request);
 	}
 }

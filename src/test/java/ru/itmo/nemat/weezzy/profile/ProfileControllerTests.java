@@ -93,11 +93,12 @@ class ProfileControllerTests {
 	}
 
 	@Test
-	void publicProfileCanBeReadById() throws Exception {
+	void authenticatedUserCanReadProfileById() throws Exception {
 		TestProfile profile = AuthenticatedTestUser.register(mockMvc, objectMapper)
 				.createProfile("Profile To Fetch");
+		AuthenticatedTestUser viewer = AuthenticatedTestUser.register(mockMvc, objectMapper);
 
-		mockMvc.perform(get(profile.location()))
+		mockMvc.perform(viewer.authorize(get(profile.location())))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.displayName").value("Profile To Fetch"))
 				.andExpect(jsonPath("$.userId").value(profile.owner().userId()));
@@ -116,9 +117,10 @@ class ProfileControllerTests {
 
 	@Test
 	void getAllProfilesReturnsCreatedProfiles() throws Exception {
-		AuthenticatedTestUser.register(mockMvc, objectMapper).createProfile("Profile In List");
+		TestProfile profile = AuthenticatedTestUser.register(mockMvc, objectMapper)
+				.createProfile("Profile In List");
 
-		mockMvc.perform(get("/api/profiles"))
+		mockMvc.perform(profile.owner().authorize(get("/api/profiles")))
 				.andExpect(status().isOk())
 				.andExpect(content().string(containsString("Profile In List")));
 	}
@@ -171,6 +173,17 @@ class ProfileControllerTests {
 								  "bio": "No token"
 								}
 								"""))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void profileReadEndpointsRequireAuthentication() throws Exception {
+		TestProfile profile = AuthenticatedTestUser.register(mockMvc, objectMapper)
+				.createProfile("Protected Profile");
+
+		mockMvc.perform(get(profile.location()))
+				.andExpect(status().isUnauthorized());
+		mockMvc.perform(get("/api/profiles"))
 				.andExpect(status().isUnauthorized());
 	}
 

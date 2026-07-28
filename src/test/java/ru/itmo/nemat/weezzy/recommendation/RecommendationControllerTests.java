@@ -12,8 +12,10 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import ru.itmo.nemat.weezzy.security.JwtService;
 import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
 import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser.TestProfile;
+import ru.itmo.nemat.weezzy.user.UserRepository;
 import tools.jackson.databind.ObjectMapper;
 
 import static org.hamcrest.Matchers.containsString;
@@ -44,6 +46,12 @@ class RecommendationControllerTests {
 
 	@Autowired
 	private ObjectMapper objectMapper;
+
+	@Autowired
+	private UserRepository userRepository;
+
+	@Autowired
+	private JwtService jwtService;
 
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
@@ -195,7 +203,7 @@ class RecommendationControllerTests {
 	}
 
 	private String createSkill(String name) throws Exception {
-		return createCatalogItem("/api/skills", """
+		return createAdminCatalogItem("/api/skills", """
 				{
 				  "name": "%s",
 				  "description": "Created for recommendation tests"
@@ -204,7 +212,7 @@ class RecommendationControllerTests {
 	}
 
 	private String createInterest(String name) throws Exception {
-		return createCatalogItem("/api/interests", """
+		return createAdminCatalogItem("/api/interests", """
 				{
 				  "name": "%s",
 				  "description": "Created for recommendation tests"
@@ -223,7 +231,26 @@ class RecommendationControllerTests {
 	}
 
 	private String createCatalogItem(String url, String body) throws Exception {
-		return mockMvc.perform(post(url)
+		AuthenticatedTestUser user = AuthenticatedTestUser.register(mockMvc, objectMapper);
+
+		return mockMvc.perform(user.authorize(post(url))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(body))
+				.andExpect(status().isCreated())
+				.andReturn()
+				.getResponse()
+				.getHeader("Location");
+	}
+
+	private String createAdminCatalogItem(String url, String body) throws Exception {
+		AuthenticatedTestUser admin = AuthenticatedTestUser.registerAdmin(
+				mockMvc,
+				objectMapper,
+				userRepository,
+				jwtService
+		);
+
+		return mockMvc.perform(admin.authorize(post(url))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(body))
 				.andExpect(status().isCreated())

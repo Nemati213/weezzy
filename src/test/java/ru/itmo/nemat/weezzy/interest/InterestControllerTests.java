@@ -8,10 +8,15 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import ru.itmo.nemat.weezzy.security.JwtService;
+import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
+import ru.itmo.nemat.weezzy.user.UserRepository;
+import tools.jackson.databind.ObjectMapper;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesPattern;
@@ -41,6 +46,15 @@ class InterestControllerTests {
 	@Autowired
 	private MockMvc mockMvc;
 
+	@Autowired
+	private ObjectMapper objectMapper;
+
+	@Autowired
+	private UserRepository userRepository;
+
+	@Autowired
+	private JwtService jwtService;
+
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
 		registry.add("spring.datasource.url", postgres::getJdbcUrl);
@@ -50,7 +64,7 @@ class InterestControllerTests {
 
 	@Test
 	void createInterestReturnsCreatedInterest() throws Exception {
-		mockMvc.perform(post("/api/interests")
+		mockMvc.perform(authorizeAdmin(post("/api/interests"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -68,7 +82,7 @@ class InterestControllerTests {
 
 	@Test
 	void createInterestTrimsName() throws Exception {
-		mockMvc.perform(post("/api/interests")
+		mockMvc.perform(authorizeAdmin(post("/api/interests"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -82,7 +96,7 @@ class InterestControllerTests {
 
 	@Test
 	void createInterestRejectsBlankName() throws Exception {
-		mockMvc.perform(post("/api/interests")
+		mockMvc.perform(authorizeAdmin(post("/api/interests"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -101,7 +115,7 @@ class InterestControllerTests {
 	void createInterestRejectsDuplicateNameIgnoringCase() throws Exception {
 		createInterest("Open Source");
 
-		mockMvc.perform(post("/api/interests")
+		mockMvc.perform(authorizeAdmin(post("/api/interests"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -118,7 +132,7 @@ class InterestControllerTests {
 	void getInterestReturnsExistingInterest() throws Exception {
 		String location = createInterest("Artificial Intelligence");
 
-		mockMvc.perform(get(location))
+		mockMvc.perform(authorize(get(location)))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.name").value("Artificial Intelligence"))
 				.andExpect(jsonPath("$.description").value("Created for interest tests"));
@@ -126,7 +140,7 @@ class InterestControllerTests {
 
 	@Test
 	void getInterestReturnsNotFoundForMissingInterest() throws Exception {
-		mockMvc.perform(get("/api/interests/00000000-0000-0000-0000-000000000000"))
+		mockMvc.perform(authorize(get("/api/interests/00000000-0000-0000-0000-000000000000")))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.status").value(404))
 				.andExpect(jsonPath("$.message")
@@ -137,7 +151,7 @@ class InterestControllerTests {
 	void getAllInterestsReturnsCreatedInterests() throws Exception {
 		createInterest("Product Design");
 
-		mockMvc.perform(get("/api/interests"))
+		mockMvc.perform(authorize(get("/api/interests")))
 				.andExpect(status().isOk())
 				.andExpect(content().string(containsString("Product Design")));
 	}
@@ -146,7 +160,7 @@ class InterestControllerTests {
 	void updateInterestChangesProvidedFields() throws Exception {
 		String location = createInterest("Robotics");
 
-		mockMvc.perform(patch(location)
+		mockMvc.perform(authorizeAdmin(patch(location))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -163,7 +177,7 @@ class InterestControllerTests {
 	void updateInterestRejectsBlankName() throws Exception {
 		String location = createInterest("Computer Vision");
 
-		mockMvc.perform(patch(location)
+		mockMvc.perform(authorizeAdmin(patch(location))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -178,15 +192,33 @@ class InterestControllerTests {
 	void deleteInterestRemovesIt() throws Exception {
 		String location = createInterest("Interest To Delete");
 
-		mockMvc.perform(delete(location))
+		mockMvc.perform(authorizeAdmin(delete(location)))
 				.andExpect(status().isNoContent());
 
-		mockMvc.perform(get(location))
+		mockMvc.perform(authorize(get(location)))
 				.andExpect(status().isNotFound());
 	}
 
+	@Test
+	void interestCatalogRequiresAuthentication() throws Exception {
+		mockMvc.perform(get("/api/interests"))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void regularUserCannotCreateInterest() throws Exception {
+		mockMvc.perform(authorize(post("/api/interests"))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "name": "Forbidden Interest"
+								}
+								"""))
+				.andExpect(status().isForbidden());
+	}
+
 	private String createInterest(String name) throws Exception {
-		return mockMvc.perform(post("/api/interests")
+		return mockMvc.perform(authorizeAdmin(post("/api/interests"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -198,5 +230,20 @@ class InterestControllerTests {
 				.andReturn()
 				.getResponse()
 				.getHeader("Location");
+	}
+
+	private MockHttpServletRequestBuilder authorize(MockHttpServletRequestBuilder request) throws Exception {
+		return AuthenticatedTestUser.register(mockMvc, objectMapper).authorize(request);
+	}
+
+	private MockHttpServletRequestBuilder authorizeAdmin(
+			MockHttpServletRequestBuilder request
+	) throws Exception {
+		return AuthenticatedTestUser.registerAdmin(
+				mockMvc,
+				objectMapper,
+				userRepository,
+				jwtService
+		).authorize(request);
 	}
 }

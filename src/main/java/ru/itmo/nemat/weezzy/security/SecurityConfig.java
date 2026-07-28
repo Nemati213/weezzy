@@ -29,12 +29,12 @@ public class SecurityConfig {
 						.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
-						.requestMatchers("/api/auth/me").authenticated()
-						.requestMatchers("/api/profiles/me", "/api/profiles/me/**").authenticated()
-						.requestMatchers("/api/recommendations", "/api/votes", "/api/votes/**", "/api/matches")
-						.authenticated()
-						.requestMatchers(HttpMethod.POST, "/api/profiles").authenticated()
-						.anyRequest().permitAll()
+						.requestMatchers("/api/admin/**").hasRole("ADMIN")
+						.requestMatchers(HttpMethod.POST, "/api/skills", "/api/interests")
+						.hasRole("ADMIN")
+						.requestMatchers(HttpMethod.PATCH, "/api/interests/**").hasRole("ADMIN")
+						.requestMatchers(HttpMethod.DELETE, "/api/interests/**").hasRole("ADMIN")
+						.anyRequest().authenticated()
 				)
 				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
 				.build();

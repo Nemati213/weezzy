@@ -4,6 +4,10 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import ru.itmo.nemat.weezzy.security.JwtService;
+import ru.itmo.nemat.weezzy.user.User;
+import ru.itmo.nemat.weezzy.user.UserRepository;
+import ru.itmo.nemat.weezzy.user.UserRole;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -34,6 +38,25 @@ public record AuthenticatedTestUser(MockMvc mockMvc, String token, String userId
 				mockMvc,
 				json.path("accessToken").asText(),
 				json.path("user").path("id").asText()
+		);
+	}
+
+	public static AuthenticatedTestUser registerAdmin(
+			MockMvc mockMvc,
+			ObjectMapper objectMapper,
+			UserRepository userRepository,
+			JwtService jwtService
+	) throws Exception {
+		AuthenticatedTestUser registeredUser = register(mockMvc, objectMapper);
+		User user = userRepository.findById(UUID.fromString(registeredUser.userId()))
+				.orElseThrow();
+		user.setRole(UserRole.ADMIN);
+		userRepository.save(user);
+
+		return new AuthenticatedTestUser(
+				mockMvc,
+				jwtService.generateAccessToken(user),
+				registeredUser.userId()
 		);
 	}
 

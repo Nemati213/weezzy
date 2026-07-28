@@ -124,7 +124,9 @@ class ProfileGoalControllerTests {
 	}
 
 	private String createGoal(String code, String name) throws Exception {
-		return mockMvc.perform(post("/api/goals")
+		AuthenticatedTestUser user = AuthenticatedTestUser.register(mockMvc, objectMapper);
+
+		return mockMvc.perform(user.authorize(post("/api/goals"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{

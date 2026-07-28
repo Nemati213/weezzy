@@ -12,8 +12,10 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import ru.itmo.nemat.weezzy.security.JwtService;
 import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
 import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser.TestProfile;
+import ru.itmo.nemat.weezzy.user.UserRepository;
 import tools.jackson.databind.ObjectMapper;
 
 import static org.hamcrest.Matchers.containsString;
@@ -45,6 +47,12 @@ class ProfileInterestControllerTests {
 
 	@Autowired
 	private ObjectMapper objectMapper;
+
+	@Autowired
+	private UserRepository userRepository;
+
+	@Autowired
+	private JwtService jwtService;
 
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
@@ -124,7 +132,14 @@ class ProfileInterestControllerTests {
 	}
 
 	private String createInterest(String name) throws Exception {
-		return mockMvc.perform(post("/api/interests")
+		AuthenticatedTestUser admin = AuthenticatedTestUser.registerAdmin(
+				mockMvc,
+				objectMapper,
+				userRepository,
+				jwtService
+		);
+
+		return mockMvc.perform(admin.authorize(post("/api/interests"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{

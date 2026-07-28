@@ -8,10 +8,15 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import ru.itmo.nemat.weezzy.security.JwtService;
+import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
+import ru.itmo.nemat.weezzy.user.UserRepository;
+import tools.jackson.databind.ObjectMapper;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesPattern;
@@ -39,6 +44,15 @@ class SkillControllerTests {
 	@Autowired
 	private MockMvc mockMvc;
 
+	@Autowired
+	private ObjectMapper objectMapper;
+
+	@Autowired
+	private UserRepository userRepository;
+
+	@Autowired
+	private JwtService jwtService;
+
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
 		registry.add("spring.datasource.url", postgres::getJdbcUrl);
@@ -48,7 +62,7 @@ class SkillControllerTests {
 
 	@Test
 	void createSkillReturnsCreatedSkill() throws Exception {
-		mockMvc.perform(post("/api/skills")
+		mockMvc.perform(authorizeAdmin(post("/api/skills"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -66,7 +80,7 @@ class SkillControllerTests {
 
 	@Test
 	void createSkillTrimsName() throws Exception {
-		mockMvc.perform(post("/api/skills")
+		mockMvc.perform(authorizeAdmin(post("/api/skills"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -80,7 +94,7 @@ class SkillControllerTests {
 
 	@Test
 	void createSkillRejectsBlankName() throws Exception {
-		mockMvc.perform(post("/api/skills")
+		mockMvc.perform(authorizeAdmin(post("/api/skills"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -97,7 +111,7 @@ class SkillControllerTests {
 
 	@Test
 	void createSkillRejectsDuplicateNameIgnoringCase() throws Exception {
-		mockMvc.perform(post("/api/skills")
+		mockMvc.perform(authorizeAdmin(post("/api/skills"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -107,7 +121,7 @@ class SkillControllerTests {
 								"""))
 				.andExpect(status().isCreated());
 
-		mockMvc.perform(post("/api/skills")
+		mockMvc.perform(authorizeAdmin(post("/api/skills"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -124,7 +138,7 @@ class SkillControllerTests {
 
 	@Test
 	void getSkillReturnsExistingSkill() throws Exception {
-		String location = mockMvc.perform(post("/api/skills")
+		String location = mockMvc.perform(authorizeAdmin(post("/api/skills"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -137,7 +151,7 @@ class SkillControllerTests {
 				.getResponse()
 				.getHeader("Location");
 
-		mockMvc.perform(get(location))
+		mockMvc.perform(authorize(get(location)))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.name").value("Machine Learning"))
 				.andExpect(jsonPath("$.description").value("Recommendation systems and models"));
@@ -145,7 +159,7 @@ class SkillControllerTests {
 
 	@Test
 	void getSkillReturnsNotFoundForMissingSkill() throws Exception {
-		mockMvc.perform(get("/api/skills/00000000-0000-0000-0000-000000000000"))
+		mockMvc.perform(authorize(get("/api/skills/00000000-0000-0000-0000-000000000000")))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.status").value(404))
 				.andExpect(jsonPath("$.error").value("Not Found"))
@@ -155,19 +169,52 @@ class SkillControllerTests {
 
 	@Test
 	void getAllSkillsReturnsCreatedSkills() throws Exception {
-		mockMvc.perform(post("/api/skills")
+		mockMvc.perform(authorizeAdmin(post("/api/skills"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
 								  "name": "Docker",
 								  "description": "Containers"
 								}
-								"""))
+				"""))
 				.andExpect(status().isCreated());
 
-		mockMvc.perform(get("/api/skills"))
+		mockMvc.perform(authorize(get("/api/skills")))
 				.andExpect(status().isOk())
 				.andExpect(content().string(containsString("Docker")))
 				.andExpect(content().string(containsString("Containers")));
+	}
+
+	@Test
+	void skillCatalogRequiresAuthentication() throws Exception {
+		mockMvc.perform(get("/api/skills"))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void regularUserCannotCreateSkill() throws Exception {
+		mockMvc.perform(authorize(post("/api/skills"))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "name": "Forbidden Skill"
+								}
+								"""))
+				.andExpect(status().isForbidden());
+	}
+
+	private MockHttpServletRequestBuilder authorize(MockHttpServletRequestBuilder request) throws Exception {
+		return AuthenticatedTestUser.register(mockMvc, objectMapper).authorize(request);
+	}
+
+	private MockHttpServletRequestBuilder authorizeAdmin(
+			MockHttpServletRequestBuilder request
+	) throws Exception {
+		return AuthenticatedTestUser.registerAdmin(
+				mockMvc,
+				objectMapper,
+				userRepository,
+				jwtService
+		).authorize(request);
 	}
 }

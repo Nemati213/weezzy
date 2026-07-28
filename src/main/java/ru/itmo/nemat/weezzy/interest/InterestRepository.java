@@ -7,4 +7,6 @@ import java.util.UUID;
 
 public interface InterestRepository extends JpaRepository<Interest, UUID> {
 	Optional<Interest> findByNameIgnoreCase(String name);
+
+	boolean existsByNameIgnoreCase(String name);
 }
