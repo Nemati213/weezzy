@@ -1,6 +1,7 @@
 package ru.itmo.nemat.weezzy.profile;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.nemat.weezzy.profile.dto.CreateProfileRequest;
@@ -8,6 +9,7 @@ import ru.itmo.nemat.weezzy.profile.dto.UpdateProfileRequest;
 import ru.itmo.nemat.weezzy.user.User;
 import ru.itmo.nemat.weezzy.user.UserService;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -34,6 +36,11 @@ public class ProfileService {
 		copyCreateFields(profile, request);
 
 		return profileRepository.save(profile);
+	}
+
+	@Transactional(readOnly = true)
+	public List<Profile> findAllByIds(Collection<UUID> profileIds) {
+		return profileRepository.findAllById(profileIds);
 	}
 
 	private Profile buildProfile(CreateProfileRequest request) {
@@ -63,6 +70,11 @@ public class ProfileService {
 
 	public List<Profile> findAll() {
 		return profileRepository.findAll();
+	}
+
+	@Transactional(readOnly = true)
+	public List<Profile> findAll(Specification<Profile> spec) {
+		return profileRepository.findAll(spec);
 	}
 
 	@Transactional

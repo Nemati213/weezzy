@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -17,6 +18,9 @@ import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
 import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser.TestProfile;
 import ru.itmo.nemat.weezzy.user.UserRepository;
 import tools.jackson.databind.ObjectMapper;
+
+import java.time.LocalDateTime;
+import java.util.UUID;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
@@ -52,6 +56,9 @@ class RecommendationControllerTests {
 
 	@Autowired
 	private JwtService jwtService;
+
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
 
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
@@ -170,6 +177,212 @@ class RecommendationControllerTests {
 						.value("Recommendation Cursor Second"))
 				.andExpect(jsonPath("$.nextCursor").doesNotExist())
 				.andExpect(content().string(not(containsString("Recommendation Cursor First"))));
+	}
+
+	@Test
+	void recommendationsDoNotRepeatRecentlyShownCandidate() throws Exception {
+		TestProfile source = createProfile("Recommendation Impression Source");
+		TestProfile candidate = createProfile("Recommendation Impression Candidate");
+		String goal = idFromLocation(createGoal(
+				"RECOMMENDATION_IMPRESSION_GOAL",
+				"Recommendation Impression Goal"
+		));
+		addGoal(source, goal);
+		addGoal(candidate, goal);
+		activateProfile(candidate);
+
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content[0].profile.displayName")
+						.value("Recommendation Impression Candidate"))
+				.andExpect(jsonPath("$.nextCursor").doesNotExist());
+
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content").isEmpty());
+	}
+
+	@Test
+	void recommendationsShowCandidateAgainAfterImpressionCooldown() throws Exception {
+		TestProfile source = createProfile("Recommendation Cooldown Source");
+		TestProfile candidate = createProfile("Recommendation Cooldown Candidate");
+		String goal = idFromLocation(createGoal(
+				"RECOMMENDATION_COOLDOWN_GOAL",
+				"Recommendation Cooldown Goal"
+		));
+		addGoal(source, goal);
+		addGoal(candidate, goal);
+		activateProfile(candidate);
+
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("Recommendation Cooldown Candidate")));
+
+		jdbcTemplate.update("""
+						UPDATE profile_recommendation_impressions
+						SET shown_at = ?
+						WHERE source_profile_id = ? AND target_profile_id = ?
+						""",
+				LocalDateTime.now().minusDays(8),
+				UUID.fromString(source.id()),
+				UUID.fromString(candidate.id())
+		);
+
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("Recommendation Cooldown Candidate")));
+	}
+
+	@Test
+	void impressionsAreScopedToSourceProfile() throws Exception {
+		TestProfile firstSource = createProfile("Recommendation Scope First Source");
+		TestProfile secondSource = createProfile("Recommendation Scope Second Source");
+		TestProfile candidate = createProfile("Recommendation Scope Candidate");
+		String goal = idFromLocation(createGoal(
+				"RECOMMENDATION_SCOPE_GOAL",
+				"Recommendation Scope Goal"
+		));
+		addGoal(firstSource, goal);
+		addGoal(secondSource, goal);
+		addGoal(candidate, goal);
+		activateProfile(candidate);
+
+		mockMvc.perform(firstSource.owner().authorize(get("/api/recommendations")))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("Recommendation Scope Candidate")));
+
+		mockMvc.perform(secondSource.owner().authorize(get("/api/recommendations")))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("Recommendation Scope Candidate")));
+	}
+
+	@Test
+	void recommendationsFilterByProfileFields() throws Exception {
+		TestProfile source = createProfile("Recommendation Fields Source");
+		TestProfile matching = createProfile("Recommendation Fields Matching");
+		TestProfile wrongFaculty = createProfile("Recommendation Fields Faculty");
+		TestProfile wrongProgram = createProfile("Recommendation Fields Program");
+		TestProfile wrongCourse = createProfile("Recommendation Fields Course");
+		String goal = idFromLocation(createGoal(
+				"RECOMMENDATION_FIELDS_GOAL",
+				"Recommendation Fields Goal"
+		));
+		addGoal(source, goal);
+		addGoal(matching, goal);
+		addGoal(wrongFaculty, goal);
+		addGoal(wrongProgram, goal);
+		addGoal(wrongCourse, goal);
+		updateProfileDetails(matching, "FICT", "Software Engineering", 3);
+		updateProfileDetails(wrongFaculty, "CT", "Software Engineering", 3);
+		updateProfileDetails(wrongProgram, "FICT", "Applied Mathematics", 3);
+		updateProfileDetails(wrongCourse, "FICT", "Software Engineering", 4);
+
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")
+						.param("faculty", "FICT")
+						.param("studyProgram", "Software Engineering")
+						.param("courses", "2,3")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content.length()").value(1))
+				.andExpect(jsonPath("$.content[0].profile.displayName")
+						.value("Recommendation Fields Matching"))
+				.andExpect(content().string(not(containsString(
+						"Recommendation Fields Faculty"
+				))))
+				.andExpect(content().string(not(containsString(
+						"Recommendation Fields Program"
+				))))
+				.andExpect(content().string(not(containsString(
+						"Recommendation Fields Course"
+				))));
+	}
+
+	@Test
+	void recommendationsCombineSignalFilterGroupsWithAnd() throws Exception {
+		TestProfile source = createProfile("Recommendation Signals Source");
+		TestProfile matching = createProfile("Recommendation Signals Matching");
+		TestProfile missingSkill = createProfile("Recommendation Signals No Skill");
+		TestProfile missingInterest = createProfile("Recommendation Signals No Interest");
+		TestProfile missingGoal = createProfile("Recommendation Signals No Goal");
+		String skill = idFromLocation(createSkill("Recommendation Signals Java"));
+		String interest = idFromLocation(createInterest("Recommendation Signals Startups"));
+		String goal = idFromLocation(createGoal(
+				"RECOMMENDATION_SIGNALS_GOAL",
+				"Recommendation Signals Goal"
+		));
+
+		addSkill(source, skill);
+		addInterest(source, interest);
+		addGoal(source, goal);
+		addSkill(matching, skill);
+		addInterest(matching, interest);
+		addGoal(matching, goal);
+		addInterest(missingSkill, interest);
+		addGoal(missingSkill, goal);
+		addSkill(missingInterest, skill);
+		addGoal(missingInterest, goal);
+		addSkill(missingGoal, skill);
+		addInterest(missingGoal, interest);
+		activateProfile(matching);
+		activateProfile(missingSkill);
+		activateProfile(missingInterest);
+		activateProfile(missingGoal);
+
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")
+						.param("skillIds", skill)
+						.param("interestIds", interest)
+						.param("goalIds", goal)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content.length()").value(1))
+				.andExpect(jsonPath("$.content[0].profile.displayName")
+						.value("Recommendation Signals Matching"));
+	}
+
+	@Test
+	void recommendationsTreatMultipleSkillIdsAsAny() throws Exception {
+		TestProfile source = createProfile("Recommendation Any Skill Source");
+		TestProfile javaCandidate = createProfile("Recommendation Any Skill Java");
+		TestProfile springCandidate = createProfile("Recommendation Any Skill Spring");
+		TestProfile pythonCandidate = createProfile("Recommendation Any Skill Python");
+		String java = idFromLocation(createSkill("Recommendation Any Java"));
+		String spring = idFromLocation(createSkill("Recommendation Any Spring"));
+		String python = idFromLocation(createSkill("Recommendation Any Python"));
+		String goal = idFromLocation(createGoal(
+				"RECOMMENDATION_ANY_SKILL_GOAL",
+				"Recommendation Any Skill Goal"
+		));
+
+		addSkill(source, java);
+		addSkill(source, spring);
+		addGoal(source, goal);
+		addSkill(javaCandidate, java);
+		addSkill(springCandidate, spring);
+		addSkill(pythonCandidate, python);
+		addGoal(javaCandidate, goal);
+		addGoal(springCandidate, goal);
+		addGoal(pythonCandidate, goal);
+		activateProfile(javaCandidate);
+		activateProfile(springCandidate);
+		activateProfile(pythonCandidate);
+
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")
+						.param("skillIds", java + "," + spring)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content.length()").value(2))
+				.andExpect(content().string(containsString("Recommendation Any Skill Java")))
+				.andExpect(content().string(containsString("Recommendation Any Skill Spring")))
+				.andExpect(content().string(not(containsString(
+						"Recommendation Any Skill Python"
+				))));
+	}
+
+	@Test
+	void recommendationsRejectCourseOutsideSupportedRange() throws Exception {
+		TestProfile source = createProfile("Recommendation Invalid Course Source");
+
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")
+						.param("courses", "0")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(containsString("courses")));
 	}
 
 	@Test
@@ -343,6 +556,25 @@ class RecommendationControllerTests {
 								  "status": "%s"
 								}
 								""".formatted(statusValue)))
+				.andExpect(status().isOk());
+	}
+
+	private void updateProfileDetails(
+			TestProfile profile,
+			String faculty,
+			String studyProgram,
+			int course
+	) throws Exception {
+		mockMvc.perform(profile.owner().authorize(patch("/api/profiles/me"))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "faculty": "%s",
+								  "studyProgram": "%s",
+								  "course": %d,
+								  "status": "ACTIVE"
+								}
+								""".formatted(faculty, studyProgram, course)))
 				.andExpect(status().isOk());
 	}
 

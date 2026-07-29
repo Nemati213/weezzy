@@ -1,16 +1,15 @@
 package ru.itmo.nemat.weezzy.recommendation;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.itmo.nemat.weezzy.connection.vote.ProfileVoteService;
 import ru.itmo.nemat.weezzy.goal.Goal;
 import ru.itmo.nemat.weezzy.goal.GoalRepository;
 import ru.itmo.nemat.weezzy.interest.Interest;
 import ru.itmo.nemat.weezzy.interest.InterestRepository;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
-import ru.itmo.nemat.weezzy.profile.ProfileStatus;
 import ru.itmo.nemat.weezzy.profile.goal.ProfileGoal;
 import ru.itmo.nemat.weezzy.profile.goal.ProfileGoalRepository;
 import ru.itmo.nemat.weezzy.profile.goal.ProfileGoalService;
@@ -25,11 +24,15 @@ import ru.itmo.nemat.weezzy.recommendation.dto.ProfileRecommendationReasonRespon
 import ru.itmo.nemat.weezzy.recommendation.dto.ProfileRecommendationResponse;
 import ru.itmo.nemat.weezzy.recommendation.dto.ProfileRecommendationScoreBreakdownResponse;
 import ru.itmo.nemat.weezzy.recommendation.dto.ProfileRecommendationSignalCountsResponse;
+import ru.itmo.nemat.weezzy.recommendation.dto.RecommendationFilter;
 import ru.itmo.nemat.weezzy.recommendation.dto.RecommendationPageResponse;
+import ru.itmo.nemat.weezzy.recommendation.impression.ProfileRecommendationImpressionService;
+import ru.itmo.nemat.weezzy.recommendation.specifications.ProfileSpecifications;
 import ru.itmo.nemat.weezzy.skill.Skill;
 import ru.itmo.nemat.weezzy.skill.SkillRepository;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -46,6 +49,7 @@ public class RecommendationService {
 	private static final int INTEREST_WEIGHT = 2;
 	private static final int GOAL_WEIGHT = 5;
 	private static final int MAX_LIMIT = 100;
+	private static final int IMPRESSION_COOLDOWN_DAYS = 7;
 	private static final Base64.Encoder CURSOR_ENCODER = Base64.getUrlEncoder()
 			.withoutPadding();
 	private static final Base64.Decoder CURSOR_DECODER = Base64.getUrlDecoder();
@@ -54,19 +58,20 @@ public class RecommendationService {
 	private final ProfileSkillService profileSkillService;
 	private final ProfileInterestService profileInterestService;
 	private final ProfileGoalService profileGoalService;
-	private final ProfileVoteService profileVoteService;
 	private final ProfileSkillRepository profileSkillRepository;
 	private final ProfileInterestRepository profileInterestRepository;
 	private final ProfileGoalRepository profileGoalRepository;
 	private final SkillRepository skillRepository;
 	private final InterestRepository interestRepository;
 	private final GoalRepository goalRepository;
+	private final ProfileRecommendationImpressionService impressionService;
 
-	@Transactional(readOnly = true)
+	@Transactional
 	public RecommendationPageResponse findRecommendations(
 			UUID profileId,
 			int limit,
-			String cursor
+			String cursor,
+			RecommendationFilter filter
 	) {
 		profileService.findById(profileId);
 		int normalizedLimit = normalizeLimit(limit);
@@ -82,18 +87,26 @@ public class RecommendationService {
 				.map(Goal::getId)
 				.collect(Collectors.toCollection(HashSet::new));
 
-		Set<UUID> sourceVotes = profileVoteService.findVotedTargetProfileIds(profileId);
-
 		if (normalizedLimit == 0
 				|| sourceSkillIds.isEmpty() && sourceInterestIds.isEmpty() && sourceGoalIds.isEmpty()) {
 			return new RecommendationPageResponse(List.of(), null);
 		}
 
-		List<Profile> candidates = profileService.findAll().stream()
-				.filter(candidate -> !candidate.getId().equals(profileId))
-				.filter(candidate -> candidate.getStatus().equals(ProfileStatus.ACTIVE))
-				.filter(candidate -> !sourceVotes.contains(candidate.getId()))
-				.toList();
+		Specification<Profile> spec = ProfileSpecifications.isActive()
+				.and(ProfileSpecifications.notSelf(profileId))
+				.and(ProfileSpecifications.notVotedBy(profileId))
+				.and(ProfileSpecifications.notRecentlyShownTo(
+						profileId,
+						LocalDateTime.now().minusDays(IMPRESSION_COOLDOWN_DAYS)
+				))
+				.and(ProfileSpecifications.hasFaculty(filter.faculty()))
+				.and(ProfileSpecifications.hasStudyProgram(filter.studyProgram()))
+				.and(ProfileSpecifications.inCourses(filter.courses()))
+				.and(ProfileSpecifications.hasAnySkill(filter.skillIds()))
+				.and(ProfileSpecifications.hasAnyInterest(filter.interestIds()))
+				.and(ProfileSpecifications.hasAnyGoal(filter.goalIds()));
+
+		List<Profile> candidates = profileService.findAll(spec);
 
 		if (candidates.isEmpty()) {
 			return new RecommendationPageResponse(List.of(), null);
@@ -125,19 +138,22 @@ public class RecommendationService {
 				.limit(normalizedLimit + 1L)
 				.toList();
 
-		if (page.size() <= normalizedLimit) {
-			return new RecommendationPageResponse(page, null);
-		}
+		boolean hasNext = page.size() > normalizedLimit;
+		List<ProfileRecommendationResponse> content = hasNext
+				? page.subList(0, normalizedLimit)
+				: page;
 
-		List<ProfileRecommendationResponse> content = page.stream()
-				.limit(normalizedLimit)
-				.toList();
-		ProfileRecommendationResponse lastRecommendation = content.get(content.size() - 1);
-
-		return new RecommendationPageResponse(
-				content,
-				encodeCursor(lastRecommendation)
+		impressionService.recordImpressions(
+				profileId,
+				content.stream()
+						.map(recommendation -> recommendation.profile().id())
+						.toList()
 		);
+
+		String nextCursor = hasNext
+				? encodeCursor(content.getLast())
+				: null;
+		return new RecommendationPageResponse(content, nextCursor);
 	}
 
 	private ProfileRecommendationResponse recommendationFor(
