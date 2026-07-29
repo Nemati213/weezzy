@@ -146,6 +146,30 @@ class AuthControllerTests {
 				.andExpect(status().isUnauthorized());
 	}
 
+	@Test
+	void openApiDocumentationIsPublicAndContainsBearerAuthentication() throws Exception {
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.info.title").value("Weezzy API"))
+				.andExpect(jsonPath("$.components.securitySchemes.bearerAuth.type")
+						.value("http"))
+				.andExpect(jsonPath("$.components.securitySchemes.bearerAuth.scheme")
+						.value("bearer"))
+				.andExpect(jsonPath("$.security").doesNotExist())
+				.andExpect(jsonPath("$.paths['/api/auth/login'].post.security")
+						.doesNotExist())
+				.andExpect(jsonPath(
+						"$.paths['/api/recommendations'].get.security[0].bearerAuth"
+				).isArray())
+				.andExpect(jsonPath("$.paths['/api/recommendations']").exists());
+	}
+
+	@Test
+	void swaggerUiIsPublic() throws Exception {
+		mockMvc.perform(get("/swagger-ui.html"))
+				.andExpect(status().is3xxRedirection());
+	}
+
 	private ResultActions register(String email, String password) throws Exception {
 		return mockMvc.perform(post("/api/auth/register")
 				.contentType(MediaType.APPLICATION_JSON)

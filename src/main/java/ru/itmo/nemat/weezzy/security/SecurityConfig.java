@@ -7,6 +7,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
@@ -21,10 +22,10 @@ public class SecurityConfig {
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 		return http
-				.csrf(csrf -> csrf.disable())
+				.csrf(AbstractHttpConfigurer::disable)
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-				.formLogin(formLogin -> formLogin.disable())
-				.httpBasic(httpBasic -> httpBasic.disable())
+				.formLogin(AbstractHttpConfigurer::disable)
+				.httpBasic(AbstractHttpConfigurer::disable)
 				.exceptionHandling(exceptions -> exceptions
 						.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
 				.authorizeHttpRequests(auth -> auth
@@ -32,6 +33,7 @@ public class SecurityConfig {
 						.requestMatchers("/api/admin/**").hasRole("ADMIN")
 						.requestMatchers(HttpMethod.POST, "/api/skills", "/api/interests")
 						.hasRole("ADMIN")
+						.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 						.requestMatchers(HttpMethod.PATCH, "/api/interests/**").hasRole("ADMIN")
 						.requestMatchers(HttpMethod.DELETE, "/api/interests/**").hasRole("ADMIN")
 						.anyRequest().authenticated()
