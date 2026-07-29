@@ -16,14 +16,14 @@ import java.util.List;
 @RequestMapping("/api/matches")
 @RequiredArgsConstructor
 public class ProfileMatchController {
-	private final ProfileMatchService service;
+	private final ProfileMatchService matchService;
 	private final ProfileService profileService;
 
 	@GetMapping
-	public ResponseEntity<List<ProfileMatchResponse>> findAllMatchesByProfileId(
+	public ResponseEntity<List<ProfileMatchResponse>> findCurrentProfileMatches(
 			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser
 	) {
-		var profileId = profileService.findByUserId(authenticatedUser.id()).getId();
-		return ResponseEntity.ok(service.findAllMatchesByProfileId(profileId));
+		var currentProfileId = profileService.findByUserId(authenticatedUser.id()).getId();
+		return ResponseEntity.ok(matchService.findAllMatchesByProfileId(currentProfileId));
 	}
 }

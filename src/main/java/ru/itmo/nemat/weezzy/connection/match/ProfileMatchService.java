@@ -5,10 +5,15 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.nemat.weezzy.connection.match.dto.ProfileMatchResponse;
+import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -35,11 +40,28 @@ public class ProfileMatchService {
 	public List<ProfileMatchResponse> findAllMatchesByProfileId(UUID profileId) {
 		profileService.findById(profileId);
 
-		return repository.findByFirstProfileIdOrSecondProfileId(profileId, profileId)
+		List<ProfileMatch> matches =
+				repository.findByFirstProfileIdOrSecondProfileIdOrderByCreatedAtDesc(
+						profileId,
+						profileId
+				);
+
+		Set<UUID> matchedProfileIds = matches.stream()
+				.map(profileMatch -> otherProfileId(profileId, profileMatch))
+				.collect(Collectors.toSet());
+
+		Map<UUID, Profile> profilesById = profileService.findAllByIds(matchedProfileIds)
+				.stream()
+				.collect(Collectors.toMap(
+						Profile::getId,
+						Function.identity()
+				));
+
+		return matches
 				.stream()
 				.map(profileMatch -> ProfileMatchResponse.from(
 						profileMatch,
-						profileService.findById(otherProfileId(profileId, profileMatch))
+						profilesById.get(otherProfileId(profileId, profileMatch))
 				))
 				.toList();
 	}

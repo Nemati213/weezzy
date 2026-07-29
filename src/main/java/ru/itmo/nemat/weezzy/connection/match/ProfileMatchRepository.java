@@ -6,5 +6,8 @@ import java.util.List;
 import java.util.UUID;
 
 public interface ProfileMatchRepository extends JpaRepository<ProfileMatch, ProfileMatchId> {
-	List<ProfileMatch> findByFirstProfileIdOrSecondProfileId(UUID firstProfileId, UUID secondProfileId);
+	List<ProfileMatch> findByFirstProfileIdOrSecondProfileIdOrderByCreatedAtDesc(
+			UUID firstProfileId,
+			UUID secondProfileId
+	);
 }
