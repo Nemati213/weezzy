@@ -28,6 +28,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ProfileController {
 	private final ProfileService service;
+	private final ProfileAccessService accessService;
 	private final ProfileSkillService profileSkillService;
 	private final ProfileInterestService profileInterestService;
 	private final ProfileGoalService profileGoalService;
@@ -41,17 +42,20 @@ public class ProfileController {
 
 		return ResponseEntity
 				.created(URI.create("/api/profiles/" + profile.getId()))
-				.body(ProfileResponse.from(profile));
+				.body(ProfileResponse.withContact(profile));
 	}
 
 	@GetMapping("/me")
 	public ResponseEntity<ProfileResponse> getProfile(@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser) {
-		return ResponseEntity.ok(ProfileResponse.from(service.findByUserId(authenticatedUser.id())));
+		return ResponseEntity.ok(ProfileResponse.withContact(service.findByUserId(authenticatedUser.id())));
 	}
 
 	@GetMapping("/{id}")
-	public ResponseEntity<ProfileResponse> getProfile(@PathVariable UUID id) {
-		return ResponseEntity.ok(ProfileResponse.from(service.findById(id)));
+	public ResponseEntity<ProfileResponse> getProfile(
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser,
+			@PathVariable UUID id
+	) {
+		return ResponseEntity.ok(accessService.findByIdForUser(authenticatedUser.id(), id));
 	}
 
 	@GetMapping
@@ -64,7 +68,7 @@ public class ProfileController {
 			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser,
 			@Valid @RequestBody UpdateProfileRequest request
 	) {
-		return ResponseEntity.ok(ProfileResponse.from(service.updateForUser(authenticatedUser.id(), request)));
+		return ResponseEntity.ok(ProfileResponse.withContact(service.updateForUser(authenticatedUser.id(), request)));
 	}
 
 	@PostMapping("/me/skills/{skillId}")

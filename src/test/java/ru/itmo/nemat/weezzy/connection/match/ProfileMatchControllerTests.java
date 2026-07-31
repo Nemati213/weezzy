@@ -18,6 +18,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -75,6 +76,8 @@ class ProfileMatchControllerTests {
 				.andExpect(jsonPath("$[0].matchedProfile.id").value(matched.id()))
 				.andExpect(jsonPath("$[0].matchedProfile.displayName")
 						.value("Match Own Candidate"))
+				.andExpect(jsonPath("$[0].matchedProfile.telegram")
+						.value("@authenticated_test"))
 				.andExpect(jsonPath("$[0].createdAt").isNotEmpty())
 				.andExpect(content().string(not(containsString(outsiderFirst.id()))))
 				.andExpect(content().string(not(containsString(outsiderSecond.id()))));
@@ -92,6 +95,55 @@ class ProfileMatchControllerTests {
 
 		mockMvc.perform(user.authorize(get("/api/matches")))
 				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void unmatchDeletesMatchAndChangesInitiatorsLikeToPass() throws Exception {
+		TestProfile first = createProfile("Unmatch First");
+		TestProfile second = createProfile("Unmatch Second");
+		createMatch(first, second);
+
+		mockMvc.perform(first.owner().authorize(delete("/api/matches/" + second.id())))
+				.andExpect(status().isNoContent());
+
+		mockMvc.perform(first.owner().authorize(get("/api/matches")))
+				.andExpect(status().isOk())
+				.andExpect(content().json("[]"));
+		mockMvc.perform(second.owner().authorize(get("/api/matches")))
+				.andExpect(status().isOk())
+				.andExpect(content().json("[]"));
+		mockMvc.perform(first.owner().authorize(get("/api/votes")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].targetProfileId").value(second.id()))
+				.andExpect(jsonPath("$[0].action").value("PASS"));
+		mockMvc.perform(second.owner().authorize(get("/api/votes")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].action").value("LIKE"));
+		mockMvc.perform(first.owner().authorize(get(second.location())))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.telegram").doesNotExist());
+	}
+
+	@Test
+	void unmatchRejectsMissingMatchSelfAndMissingProfile() throws Exception {
+		TestProfile first = createProfile("Unmatch Invalid First");
+		TestProfile second = createProfile("Unmatch Invalid Second");
+
+		mockMvc.perform(first.owner().authorize(delete("/api/matches/" + second.id())))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value(containsString("Match not found")));
+		mockMvc.perform(first.owner().authorize(delete("/api/matches/" + first.id())))
+				.andExpect(status().isBadRequest());
+		mockMvc.perform(first.owner().authorize(delete(
+				"/api/matches/00000000-0000-0000-0000-000000000000"
+		)))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void unmatchRequiresAuthentication() throws Exception {
+		mockMvc.perform(delete("/api/matches/00000000-0000-0000-0000-000000000000"))
+				.andExpect(status().isUnauthorized());
 	}
 
 	private TestProfile createProfile(String displayName) throws Exception {

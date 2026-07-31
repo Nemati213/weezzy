@@ -31,11 +31,18 @@ public class SecurityConfig {
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
 						.requestMatchers("/api/admin/**").hasRole("ADMIN")
-						.requestMatchers(HttpMethod.POST, "/api/skills", "/api/interests")
+						.requestMatchers(
+								HttpMethod.POST,
+								"/api/skills",
+								"/api/interests",
+								"/api/goals"
+						)
 						.hasRole("ADMIN")
 						.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-						.requestMatchers(HttpMethod.PATCH, "/api/interests/**").hasRole("ADMIN")
-						.requestMatchers(HttpMethod.DELETE, "/api/interests/**").hasRole("ADMIN")
+						.requestMatchers(HttpMethod.PATCH, "/api/interests/**", "/api/goals/**")
+						.hasRole("ADMIN")
+						.requestMatchers(HttpMethod.DELETE, "/api/interests/**", "/api/goals/**")
+						.hasRole("ADMIN")
 						.anyRequest().authenticated()
 				)
 				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

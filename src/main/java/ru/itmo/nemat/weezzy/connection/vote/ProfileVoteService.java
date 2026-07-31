@@ -48,6 +48,8 @@ public class ProfileVoteService {
 			repository.findBySourceProfileIdAndTargetProfileId(targetProfileId, sourceProfileId)
 					.filter(reciprocalVote -> reciprocalVote.getAction() == ProfileVoteAction.LIKE)
 					.ifPresent(reciprocalVote -> matchService.create(sourceProfileId, targetProfileId));
+		} else {
+			matchService.deleteIfExists(sourceProfileId, targetProfileId);
 		}
 
 		return savedVote;

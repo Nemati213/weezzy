@@ -1,5 +1,6 @@
 package ru.itmo.nemat.weezzy.profile.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileStatus;
 
@@ -10,6 +11,7 @@ public record ProfileResponse(
 		UUID id,
 		String displayName,
 		String bio,
+		@JsonInclude(JsonInclude.Include.NON_NULL)
 		String telegram,
 		String faculty,
 		String studyProgram,
@@ -20,6 +22,22 @@ public record ProfileResponse(
 		UUID userId
 ) {
 	public static ProfileResponse from(Profile profile) {
+		return new ProfileResponse(
+				profile.getId(),
+				profile.getDisplayName(),
+				profile.getBio(),
+				null,
+				profile.getFaculty(),
+				profile.getStudyProgram(),
+				profile.getCourse(),
+				profile.getCreatedAt(),
+				profile.getUpdatedAt(),
+				profile.getStatus(),
+				profile.getUser() == null ? null : profile.getUser().getId()
+		);
+	}
+
+	public static ProfileResponse withContact(Profile profile) {
 		return new ProfileResponse(
 				profile.getId(),
 				profile.getDisplayName(),

@@ -12,7 +12,7 @@ public record ProfileMatchResponse(
 ) {
 	public static ProfileMatchResponse from(ProfileMatch profileMatch, Profile matchedProfile) {
 		return new ProfileMatchResponse(
-				ProfileResponse.from(matchedProfile),
+				ProfileResponse.withContact(matchedProfile),
 				profileMatch.getCreatedAt()
 		);
 	}

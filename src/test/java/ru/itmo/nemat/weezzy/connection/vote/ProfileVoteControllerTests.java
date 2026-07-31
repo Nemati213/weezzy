@@ -94,6 +94,25 @@ class ProfileVoteControllerTests {
 	}
 
 	@Test
+	void changingLikeToPassDeletesExistingMatch() throws Exception {
+		TestProfile first = createProfile("Vote Pass Existing Match First");
+		TestProfile second = createProfile("Vote Pass Existing Match Second");
+		performVote(first, second.id(), "LIKE").andExpect(status().isOk());
+		performVote(second, first.id(), "LIKE").andExpect(status().isOk());
+
+		performVote(first, second.id(), "PASS")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.action").value("PASS"));
+
+		mockMvc.perform(first.owner().authorize(get("/api/matches")))
+				.andExpect(status().isOk())
+				.andExpect(content().json("[]"));
+		mockMvc.perform(second.owner().authorize(get("/api/matches")))
+				.andExpect(status().isOk())
+				.andExpect(content().json("[]"));
+	}
+
+	@Test
 	void createVoteRejectsSelfVote() throws Exception {
 		TestProfile profile = createProfile("Vote Controller Self");
 

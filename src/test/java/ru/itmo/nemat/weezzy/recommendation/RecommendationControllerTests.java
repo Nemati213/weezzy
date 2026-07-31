@@ -527,25 +527,13 @@ class RecommendationControllerTests {
 	}
 
 	private String createGoal(String code, String name) throws Exception {
-		return createCatalogItem("/api/goals", """
+		return createAdminCatalogItem("/api/goals", """
 				{
 				  "code": "%s",
 				  "name": "%s",
 				  "description": "Created for recommendation tests"
 				}
 				""".formatted(code, name));
-	}
-
-	private String createCatalogItem(String url, String body) throws Exception {
-		AuthenticatedTestUser user = AuthenticatedTestUser.register(mockMvc, objectMapper);
-
-		return mockMvc.perform(user.authorize(post(url))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content(body))
-				.andExpect(status().isCreated())
-				.andReturn()
-				.getResponse()
-				.getHeader("Location");
 	}
 
 	private String createAdminCatalogItem(String url, String body) throws Exception {

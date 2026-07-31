@@ -16,6 +16,7 @@ import org.testcontainers.utility.DockerImageName;
 import ru.itmo.nemat.weezzy.connection.ProfilePairLockService;
 import ru.itmo.nemat.weezzy.connection.match.ProfileMatchId;
 import ru.itmo.nemat.weezzy.connection.match.ProfileMatchRepository;
+import ru.itmo.nemat.weezzy.connection.match.ProfileMatchService;
 import ru.itmo.nemat.weezzy.connection.vote.ProfileVoteAction;
 import ru.itmo.nemat.weezzy.connection.vote.ProfileVoteRepository;
 import ru.itmo.nemat.weezzy.connection.vote.ProfileVoteService;
@@ -65,6 +66,9 @@ class ProfileBlockConcurrencyTests {
 
 	@Autowired
 	private ProfileMatchRepository matchRepository;
+
+	@Autowired
+	private ProfileMatchService matchService;
 
 	@Autowired
 	private ProfileService profileService;
@@ -227,6 +231,57 @@ class ProfileBlockConcurrencyTests {
 							blockedProfileId
 					))
 					.hasSize(1);
+		} finally {
+			releasePair.countDown();
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	@Timeout(30)
+	void unmatchWinsPairLockAndConcurrentLikeDoesNotRecreateMatch() throws Exception {
+		UUID firstProfileId = createProfile("Concurrency Unmatch First");
+		UUID secondProfileId = createProfile("Concurrency Unmatch Second");
+		voteService.vote(firstProfileId, secondProfileId, ProfileVoteAction.LIKE);
+		voteService.vote(secondProfileId, firstProfileId, ProfileVoteAction.LIKE);
+		CountDownLatch pairLocked = new CountDownLatch(1);
+		CountDownLatch releasePair = new CountDownLatch(1);
+		CountDownLatch likeStarted = new CountDownLatch(1);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+
+		try {
+			Future<?> unmatchFuture = executor.submit(() -> inTransactionWithPairLock(
+					firstProfileId,
+					secondProfileId,
+					pairLocked,
+					releasePair,
+					() -> matchService.unmatch(firstProfileId, secondProfileId)
+			));
+			await(pairLocked);
+			Future<?> likeFuture = executor.submit(() -> {
+				likeStarted.countDown();
+				return voteService.vote(
+						secondProfileId,
+						firstProfileId,
+						ProfileVoteAction.LIKE
+				);
+			});
+			await(likeStarted);
+			assertStillWaiting(likeFuture);
+
+			releasePair.countDown();
+			getResult(unmatchFuture);
+			getResult(likeFuture);
+
+			assertThat(voteRepository.findBySourceProfileIdAndTargetProfileId(
+					firstProfileId,
+					secondProfileId
+			)).get().extracting(vote -> vote.getAction())
+					.isEqualTo(ProfileVoteAction.PASS);
+			assertThat(matchRepository.findById(normalizedMatchId(
+					firstProfileId,
+					secondProfileId
+			))).isEmpty();
 		} finally {
 			releasePair.countDown();
 			executor.shutdownNow();

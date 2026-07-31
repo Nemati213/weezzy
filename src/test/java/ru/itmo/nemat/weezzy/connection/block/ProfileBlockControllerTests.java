@@ -62,6 +62,7 @@ class ProfileBlockControllerTests {
 				.andExpect(jsonPath("$.blockedProfile.id").value(blocked.id()))
 				.andExpect(jsonPath("$.blockedProfile.displayName")
 						.value("Block Direction Blocked"))
+				.andExpect(jsonPath("$.blockedProfile.telegram").doesNotExist())
 				.andExpect(jsonPath("$.createdAt").isNotEmpty());
 
 		mockMvc.perform(blocker.owner().authorize(get("/api/blocks")))

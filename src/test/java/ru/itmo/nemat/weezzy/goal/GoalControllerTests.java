@@ -13,7 +13,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import ru.itmo.nemat.weezzy.security.JwtService;
 import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
+import ru.itmo.nemat.weezzy.user.UserRepository;
 import tools.jackson.databind.ObjectMapper;
 
 import static org.hamcrest.Matchers.containsString;
@@ -46,6 +48,12 @@ class GoalControllerTests {
 
 	@Autowired
 	private ObjectMapper objectMapper;
+
+	@Autowired
+	private UserRepository userRepository;
+
+	@Autowired
+	private JwtService jwtService;
 
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
@@ -220,6 +228,41 @@ class GoalControllerTests {
 				.andExpect(status().isUnauthorized());
 	}
 
+	@Test
+	void regularUserCanReadGoalCatalog() throws Exception {
+		AuthenticatedTestUser user = AuthenticatedTestUser.register(mockMvc, objectMapper);
+
+		mockMvc.perform(user.authorize(get("/api/goals")))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("TEAM_SEARCH")));
+	}
+
+	@Test
+	void regularUserCannotManageGoals() throws Exception {
+		String location = createGoal("ADMIN_ONLY_GOAL", "Admin Only Goal");
+		AuthenticatedTestUser user = AuthenticatedTestUser.register(mockMvc, objectMapper);
+
+		mockMvc.perform(user.authorize(post("/api/goals"))
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("""
+							{
+							  "code": "FORBIDDEN_GOAL",
+							  "name": "Forbidden Goal"
+							}
+							"""))
+				.andExpect(status().isForbidden());
+		mockMvc.perform(user.authorize(patch(location))
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("""
+							{
+							  "name": "Forbidden Update"
+							}
+							"""))
+				.andExpect(status().isForbidden());
+		mockMvc.perform(user.authorize(delete(location)))
+				.andExpect(status().isForbidden());
+	}
+
 	private String createGoal(String code, String name) throws Exception {
 		return mockMvc.perform(authorize(post("/api/goals"))
 						.contentType(MediaType.APPLICATION_JSON)
@@ -237,6 +280,11 @@ class GoalControllerTests {
 	}
 
 	private MockHttpServletRequestBuilder authorize(MockHttpServletRequestBuilder request) throws Exception {
-		return AuthenticatedTestUser.register(mockMvc, objectMapper).authorize(request);
+		return AuthenticatedTestUser.registerAdmin(
+				mockMvc,
+				objectMapper,
+				userRepository,
+				jwtService
+		).authorize(request);
 	}
 }

@@ -11,6 +11,7 @@ import ru.itmo.nemat.weezzy.user.UserService;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -66,6 +67,11 @@ public class ProfileService {
 
 	public Profile findByUserId(UUID userId) {
 		return profileRepository.findByUserId(userId).orElseThrow(() -> new ProfileNotFoundException(userId));
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<Profile> findOptionalByUserId(UUID userId) {
+		return profileRepository.findByUserId(userId);
 	}
 
 	public List<Profile> findAll() {

@@ -6,6 +6,8 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.nemat.weezzy.connection.ProfilePairLockService;
 import ru.itmo.nemat.weezzy.connection.block.ProfileBlockService;
 import ru.itmo.nemat.weezzy.connection.match.dto.ProfileMatchResponse;
+import ru.itmo.nemat.weezzy.connection.vote.ProfileVoteAction;
+import ru.itmo.nemat.weezzy.connection.vote.ProfileVoteRepository;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 
@@ -23,6 +25,7 @@ public class ProfileMatchService {
 	private final ProfileService profileService;
 	private final ProfileBlockService blockService;
 	private final ProfilePairLockService pairLockService;
+	private final ProfileVoteRepository voteRepository;
 
 	@Transactional
 	public ProfileMatch create(UUID firstProfileId, UUID secondProfileId) {
@@ -67,6 +70,48 @@ public class ProfileMatchService {
 						profilesById.get(otherProfileId(profileId, profileMatch))
 				))
 				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public boolean hasMatch(UUID firstProfileId, UUID secondProfileId) {
+		return repository.existsById(normalizedId(firstProfileId, secondProfileId));
+	}
+
+	@Transactional
+	public void deleteIfExists(UUID firstProfileId, UUID secondProfileId) {
+		if (firstProfileId.equals(secondProfileId)) {
+			return;
+		}
+
+		pairLockService.lock(firstProfileId, secondProfileId);
+		ProfileMatchId matchId = normalizedId(firstProfileId, secondProfileId);
+		if (repository.existsById(matchId)) {
+			repository.deleteById(matchId);
+		}
+	}
+
+	@Transactional
+	public void unmatch(UUID sourceProfileId, UUID matchedProfileId) {
+		if (sourceProfileId.equals(matchedProfileId)) {
+			throw new SelfMatchException(sourceProfileId);
+		}
+
+		pairLockService.lock(sourceProfileId, matchedProfileId);
+		ProfileMatchId matchId = normalizedId(sourceProfileId, matchedProfileId);
+		if (!repository.existsById(matchId)) {
+			throw new MatchNotFoundException(sourceProfileId, matchedProfileId);
+		}
+
+		voteRepository.findBySourceProfileIdAndTargetProfileId(
+					sourceProfileId,
+					matchedProfileId
+			)
+				.filter(vote -> vote.getAction() == ProfileVoteAction.LIKE)
+				.ifPresent(vote -> {
+					vote.setAction(ProfileVoteAction.PASS);
+					voteRepository.save(vote);
+				});
+		repository.deleteById(matchId);
 	}
 
 	private UUID otherProfileId(UUID sourceProfileId, ProfileMatch profileMatch) {
