@@ -1,5 +1,7 @@
 # Weezzy
 
+[![CI](https://github.com/Nemati213/weezzy/actions/workflows/ci.yml/badge.svg)](https://github.com/Nemati213/weezzy/actions/workflows/ci.yml)
+
 Weezzy — backend внутреннего сервиса ИТМО для нетворкинга, общения и поиска людей
 в команду. Пользователь создаёт профиль, указывает навыки, интересы и цели, получает
 рекомендации других участников и голосует за анкеты. Взаимный `LIKE` создаёт матч.
