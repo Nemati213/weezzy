@@ -15,4 +15,5 @@ public interface ProfileSkillRepository extends JpaRepository<ProfileSkill, Prof
 
 	List<ProfileSkill> findAllByProfileIdIn(Collection<UUID> profileIds);
 
+	boolean existsByProfileId(UUID profileId);
 }

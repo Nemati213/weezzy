@@ -21,10 +21,22 @@ public interface ProfileRepository
 	@Query("""
 			SELECT profile
 			FROM Profile profile
+			WHERE profile.user.id = :userId
+			""")
+	Optional<Profile> findByUserIdForUpdate(@Param("userId") UUID userId);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("""
+			SELECT profile
+			FROM Profile profile
 			WHERE profile.id IN :profileIds
 			ORDER BY profile.id
 			""")
 	List<Profile> findAllByIdForUpdate(
 			@Param("profileIds") Collection<UUID> profileIds
 	);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT profile FROM Profile profile WHERE profile.id = :id")
+	Optional<Profile> findByIdForUpdate(@Param("id") UUID id);
 }

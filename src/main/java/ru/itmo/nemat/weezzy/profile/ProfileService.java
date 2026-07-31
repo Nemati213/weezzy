@@ -3,7 +3,9 @@ package ru.itmo.nemat.weezzy.profile;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import ru.itmo.nemat.weezzy.onboarding.OnboardingService;
 import ru.itmo.nemat.weezzy.profile.dto.CreateProfileRequest;
 import ru.itmo.nemat.weezzy.profile.dto.UpdateProfileRequest;
 import ru.itmo.nemat.weezzy.user.User;
@@ -19,6 +21,7 @@ import java.util.UUID;
 public class ProfileService {
 	private final ProfileRepository profileRepository;
 	private final UserService userService;
+	private final OnboardingService onboardingService;
 
 	@Transactional
 	public Profile create(CreateProfileRequest request) {
@@ -65,6 +68,12 @@ public class ProfileService {
 				.orElseThrow(() -> new ProfileNotFoundException(id));
 	}
 
+	@Transactional(propagation = Propagation.MANDATORY)
+	public Profile findByIdForUpdate(UUID id) {
+		return profileRepository.findByIdForUpdate(id)
+				.orElseThrow(() -> new ProfileNotFoundException(id));
+	}
+
 	public Profile findByUserId(UUID userId) {
 		return profileRepository.findByUserId(userId).orElseThrow(() -> new ProfileNotFoundException(userId));
 	}
@@ -85,21 +94,22 @@ public class ProfileService {
 
 	@Transactional
 	public Profile update(UUID id, UpdateProfileRequest request) {
-		Profile profile = findById(id);
-		copyUpdateFields(profile, request);
+		Profile profile = findByIdForUpdate(id);
+		applyUpdate(profile, request);
 
 		return profileRepository.save(profile);
 	}
 
 	@Transactional
 	public Profile updateForUser(UUID userId, UpdateProfileRequest request) {
-		Profile profile = findByUserId(userId);
-		copyUpdateFields(profile, request);
+		Profile profile = profileRepository.findByUserIdForUpdate(userId)
+				.orElseThrow(() -> new ProfileNotFoundException(userId));
+		applyUpdate(profile, request);
 
 		return profileRepository.save(profile);
 	}
 
-	private void copyUpdateFields(Profile profile, UpdateProfileRequest request) {
+	private void applyUpdate(Profile profile, UpdateProfileRequest request) {
 		if (request.displayName() != null) {
 			profile.setDisplayName(request.displayName());
 		}
@@ -118,8 +128,15 @@ public class ProfileService {
 		if (request.course() != null) {
 			profile.setCourse(request.course());
 		}
+
+		if (request.status() == ProfileStatus.ACTIVE) {
+			onboardingService.validateActivationAllowed(profile);
+			profile.setStatus(request.status());
+			return;
+		}
 		if (request.status() != null) {
 			profile.setStatus(request.status());
 		}
+		onboardingService.moveToDraftIfIncomplete(profile);
 	}
 }

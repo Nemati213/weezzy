@@ -14,5 +14,7 @@ public interface ProfileGoalRepository extends JpaRepository<ProfileGoal, Profil
 	void deleteByProfileIdAndGoalId(UUID profileId, UUID goalId);
 
 	List<ProfileGoal> findAllByProfileIdIn(Collection<UUID> profileIds);
+	List<ProfileGoal> findAllByGoalId(UUID goalId);
 
+	boolean existsByProfileId(UUID profileId);
 }

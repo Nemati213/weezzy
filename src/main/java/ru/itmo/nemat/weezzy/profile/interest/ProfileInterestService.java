@@ -5,6 +5,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.nemat.weezzy.interest.Interest;
 import ru.itmo.nemat.weezzy.interest.InterestService;
+import ru.itmo.nemat.weezzy.onboarding.OnboardingService;
+import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 
 import java.util.List;
@@ -16,10 +18,11 @@ public class ProfileInterestService {
 	private final ProfileService profileService;
 	private final InterestService interestService;
 	private final ProfileInterestRepository profileInterestRepository;
+	private final OnboardingService onboardingService;
 
 	@Transactional
 	public Interest addInterest(UUID profileId, UUID interestId) {
-		profileService.findById(profileId);
+		profileService.findByIdForUpdate(profileId);
 		Interest interest = interestService.findById(interestId);
 
 		if (profileInterestRepository.existsByProfileIdAndInterestId(profileId, interestId)) {
@@ -46,7 +49,7 @@ public class ProfileInterestService {
 
 	@Transactional
 	public void removeInterest(UUID profileId, UUID interestId) {
-		profileService.findById(profileId);
+		Profile profile = profileService.findByIdForUpdate(profileId);
 		interestService.findById(interestId);
 
 		if (!profileInterestRepository.existsByProfileIdAndInterestId(profileId, interestId)) {
@@ -54,5 +57,7 @@ public class ProfileInterestService {
 		}
 
 		profileInterestRepository.deleteByProfileIdAndInterestId(profileId, interestId);
+		profileInterestRepository.flush();
+		onboardingService.moveToDraftIfIncomplete(profile);
 	}
 }

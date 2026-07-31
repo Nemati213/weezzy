@@ -3,6 +3,8 @@ package ru.itmo.nemat.weezzy.profile.skill;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.itmo.nemat.weezzy.onboarding.OnboardingService;
+import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 import ru.itmo.nemat.weezzy.skill.Skill;
 import ru.itmo.nemat.weezzy.skill.SkillService;
@@ -16,10 +18,11 @@ public class ProfileSkillService {
 	private final ProfileService profileService;
 	private final SkillService skillService;
 	private final ProfileSkillRepository profileSkillRepository;
+	private final OnboardingService onboardingService;
 
 	@Transactional
 	public Skill addSkill(UUID profileId, UUID skillId) {
-		profileService.findById(profileId);
+		profileService.findByIdForUpdate(profileId);
 		Skill skill = skillService.findById(skillId);
 
 		if (profileSkillRepository.existsByProfileIdAndSkillId(profileId, skillId)) {
@@ -46,7 +49,7 @@ public class ProfileSkillService {
 
 	@Transactional
 	public void removeSkill(UUID profileId, UUID skillId) {
-		profileService.findById(profileId);
+		Profile profile = profileService.findByIdForUpdate(profileId);
 		skillService.findById(skillId);
 
 		if (!profileSkillRepository.existsByProfileIdAndSkillId(profileId, skillId)) {
@@ -54,5 +57,7 @@ public class ProfileSkillService {
 		}
 
 		profileSkillRepository.deleteByProfileIdAndSkillId(profileId, skillId);
+		profileSkillRepository.flush();
+		onboardingService.moveToDraftIfIncomplete(profile);
 	}
 }

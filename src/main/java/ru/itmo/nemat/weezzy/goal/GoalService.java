@@ -3,6 +3,8 @@ package ru.itmo.nemat.weezzy.goal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.itmo.nemat.weezzy.onboarding.OnboardingService;
+import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.goal.dto.CreateGoalRequest;
 import ru.itmo.nemat.weezzy.goal.dto.UpdateGoalRequest;
 
@@ -14,6 +16,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class GoalService {
 	private final GoalRepository repository;
+	private final OnboardingService onboardingService;
 
 	@Transactional
 	public Goal create(CreateGoalRequest request) {
@@ -64,7 +67,12 @@ public class GoalService {
 
 	@Transactional
 	public void delete(UUID id) {
-		repository.delete(findById(id));
+		Goal goal = repository.findByIdForUpdate(id)
+				.orElseThrow(() -> new GoalNotFoundException(id));
+		List<Profile> affectedProfiles = onboardingService.lockProfilesUsingGoal(id);
+		repository.delete(goal);
+		repository.flush();
+		onboardingService.moveToDraftIfIncomplete(affectedProfiles);
 	}
 
 	private String normalizeCode(String code) {

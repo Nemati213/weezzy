@@ -18,6 +18,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -61,6 +62,7 @@ class ProfileControllerTests {
 				.andExpect(status().isCreated())
 				.andExpect(header().string("Location", matchesPattern("/api/profiles/.+")))
 				.andExpect(jsonPath("$.displayName").value("Nemat"))
+				.andExpect(jsonPath("$.telegram").value("@profile_test"))
 				.andExpect(jsonPath("$.course").value(2))
 				.andExpect(jsonPath("$.status").value("DRAFT"))
 				.andExpect(jsonPath("$.userId").value(user.userId()));
@@ -101,6 +103,7 @@ class ProfileControllerTests {
 		mockMvc.perform(viewer.authorize(get(profile.location())))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.displayName").value("Profile To Fetch"))
+				.andExpect(jsonPath("$.telegram").doesNotExist())
 				.andExpect(jsonPath("$.userId").value(profile.owner().userId()));
 	}
 
@@ -112,7 +115,8 @@ class ProfileControllerTests {
 		mockMvc.perform(profile.owner().authorize(get("/api/profiles/me")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.id").value(profile.id()))
-				.andExpect(jsonPath("$.displayName").value("My Profile"));
+				.andExpect(jsonPath("$.displayName").value("My Profile"))
+				.andExpect(jsonPath("$.telegram").value("@authenticated_test"));
 	}
 
 	@Test
@@ -122,7 +126,38 @@ class ProfileControllerTests {
 
 		mockMvc.perform(profile.owner().authorize(get("/api/profiles")))
 				.andExpect(status().isOk())
-				.andExpect(content().string(containsString("Profile In List")));
+				.andExpect(content().string(containsString("Profile In List")))
+				.andExpect(content().string(not(containsString("@authenticated_test"))));
+	}
+
+	@Test
+	void matchedProfilesCanReadEachOthersTelegram() throws Exception {
+		TestProfile first = AuthenticatedTestUser.register(mockMvc, objectMapper)
+				.createProfile("Profile Match First");
+		TestProfile second = AuthenticatedTestUser.register(mockMvc, objectMapper)
+				.createProfile("Profile Match Second");
+		performVote(first, second, "LIKE");
+		performVote(second, first, "LIKE");
+
+		mockMvc.perform(first.owner().authorize(get(second.location())))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.telegram").value("@authenticated_test"));
+	}
+
+	@Test
+	void blockedProfilesCannotReadEachOtherDirectly() throws Exception {
+		TestProfile blocker = AuthenticatedTestUser.register(mockMvc, objectMapper)
+				.createProfile("Profile Blocker");
+		TestProfile blocked = AuthenticatedTestUser.register(mockMvc, objectMapper)
+				.createProfile("Profile Blocked");
+
+		mockMvc.perform(blocker.owner().authorize(post("/api/blocks/" + blocked.id())))
+				.andExpect(status().isOk());
+
+		mockMvc.perform(blocker.owner().authorize(get(blocked.location())))
+				.andExpect(status().isNotFound());
+		mockMvc.perform(blocked.owner().authorize(get(blocker.location())))
+				.andExpect(status().isNotFound());
 	}
 
 	@Test
@@ -135,15 +170,14 @@ class ProfileControllerTests {
 						.content("""
 								{
 								  "bio": "New bio",
-								  "course": 4,
-								  "status": "ACTIVE"
+								  "course": 4
 								}
 								"""))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.displayName").value("Before Update"))
 				.andExpect(jsonPath("$.bio").value("New bio"))
 				.andExpect(jsonPath("$.course").value(4))
-				.andExpect(jsonPath("$.status").value("ACTIVE"));
+				.andExpect(jsonPath("$.status").value("DRAFT"));
 	}
 
 	@Test
@@ -216,5 +250,17 @@ class ProfileControllerTests {
 				  "course": %d
 				}
 				""".formatted(displayName, course);
+	}
+
+	private void performVote(TestProfile source, TestProfile target, String action)
+			throws Exception {
+		mockMvc.perform(source.owner().authorize(post("/api/votes/" + target.id()))
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("""
+							{
+							  "action": "%s"
+							}
+							""".formatted(action)))
+				.andExpect(status().isOk());
 	}
 }

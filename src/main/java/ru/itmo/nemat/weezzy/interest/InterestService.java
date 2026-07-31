@@ -3,6 +3,8 @@ package ru.itmo.nemat.weezzy.interest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.itmo.nemat.weezzy.onboarding.OnboardingService;
+import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.interest.dto.CreateInterestRequest;
 import ru.itmo.nemat.weezzy.interest.dto.UpdateInterestRequest;
 
@@ -13,6 +15,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class InterestService {
 	private final InterestRepository repository;
+	private final OnboardingService onboardingService;
 
 	@Transactional
 	public Interest create(CreateInterestRequest request) {
@@ -61,6 +64,11 @@ public class InterestService {
 
 	@Transactional
 	public void delete(UUID id) {
-		repository.delete(findById(id));
+		Interest interest = repository.findByIdForUpdate(id)
+				.orElseThrow(() -> new InterestNotFoundException(id));
+		List<Profile> affectedProfiles = onboardingService.lockProfilesUsingInterest(id);
+		repository.delete(interest);
+		repository.flush();
+		onboardingService.moveToDraftIfIncomplete(affectedProfiles);
 	}
 }

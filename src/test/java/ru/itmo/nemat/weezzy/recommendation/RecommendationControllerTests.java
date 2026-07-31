@@ -107,6 +107,7 @@ class RecommendationControllerTests {
 		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.content[0].profile.displayName").value("Recommendation Alice"))
+				.andExpect(jsonPath("$.content[0].profile.telegram").doesNotExist())
 				.andExpect(jsonPath("$.content[0].score").value(7))
 				.andExpect(jsonPath("$.content[0].reason.scoreBreakdown.skills").value(3))
 				.andExpect(jsonPath("$.content[0].reason.scoreBreakdown.interests").value(4))
@@ -569,6 +570,7 @@ class RecommendationControllerTests {
 	}
 
 	private void activateProfile(TestProfile profile) throws Exception {
+		completeOnboardingSignals(profile);
 		updateProfileStatus(profile, "ACTIVE");
 	}
 
@@ -589,6 +591,7 @@ class RecommendationControllerTests {
 			String studyProgram,
 			int course
 	) throws Exception {
+		completeOnboardingSignals(profile);
 		mockMvc.perform(profile.owner().authorize(patch("/api/profiles/me"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
@@ -600,6 +603,17 @@ class RecommendationControllerTests {
 								}
 								""".formatted(faculty, studyProgram, course)))
 				.andExpect(status().isOk());
+	}
+
+	private void completeOnboardingSignals(TestProfile profile) throws Exception {
+		String suffix = UUID.randomUUID().toString();
+		String codeSuffix = suffix.replace("-", "").toUpperCase();
+		addSkill(profile, idFromLocation(createSkill("Filler skill " + suffix)));
+		addInterest(profile, idFromLocation(createInterest("Filler interest " + suffix)));
+		addGoal(profile, idFromLocation(createGoal(
+				"FILLER_" + codeSuffix,
+				"Filler goal " + suffix
+		)));
 	}
 
 	private String idFromLocation(String location) {

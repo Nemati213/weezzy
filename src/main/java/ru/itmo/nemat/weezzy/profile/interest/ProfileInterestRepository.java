@@ -14,5 +14,7 @@ public interface ProfileInterestRepository extends JpaRepository<ProfileInterest
 	void deleteByProfileIdAndInterestId(UUID profileId, UUID interestId);
 
 	List<ProfileInterest> findAllByProfileIdIn(Collection<UUID> profileIds);
+	List<ProfileInterest> findAllByInterestId(UUID interestId);
 
+	boolean existsByProfileId(UUID profileId);
 }
