@@ -3,6 +3,8 @@ package ru.itmo.nemat.weezzy.connection.vote;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.itmo.nemat.weezzy.connection.ProfilePairLockService;
+import ru.itmo.nemat.weezzy.connection.block.ProfileBlockService;
 import ru.itmo.nemat.weezzy.connection.match.ProfileMatchService;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 
@@ -17,6 +19,8 @@ public class ProfileVoteService {
 	private final ProfileVoteRepository repository;
 	private final ProfileService profileService;
 	private final ProfileMatchService matchService;
+	private final ProfileBlockService blockService;
+	private final ProfilePairLockService pairLockService;
 
 	@Transactional
 	public ProfileVote vote(UUID sourceProfileId, UUID targetProfileId, ProfileVoteAction action) {
@@ -24,10 +28,13 @@ public class ProfileVoteService {
 			throw new SelfVoteException(sourceProfileId);
 		}
 
-		profileService.findById(sourceProfileId);
-		profileService.findById(targetProfileId);
+		pairLockService.lock(sourceProfileId, targetProfileId);
+		blockService.ensureInteractionAllowed(sourceProfileId, targetProfileId);
 
-		ProfileVote vote = repository.findBySourceProfileIdAndTargetProfileId(sourceProfileId, targetProfileId)
+		ProfileVote vote = repository.findBySourceProfileIdAndTargetProfileId(
+				sourceProfileId,
+				targetProfileId
+		)
 				.orElseGet(() -> {
 					ProfileVote profileVote = new ProfileVote();
 					profileVote.setSourceProfileId(sourceProfileId);

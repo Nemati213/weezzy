@@ -1,9 +1,10 @@
 package ru.itmo.nemat.weezzy.connection.match;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.itmo.nemat.weezzy.connection.ProfilePairLockService;
+import ru.itmo.nemat.weezzy.connection.block.ProfileBlockService;
 import ru.itmo.nemat.weezzy.connection.match.dto.ProfileMatchResponse;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
@@ -20,6 +21,8 @@ import java.util.stream.Collectors;
 public class ProfileMatchService {
 	private final ProfileMatchRepository repository;
 	private final ProfileService profileService;
+	private final ProfileBlockService blockService;
+	private final ProfilePairLockService pairLockService;
 
 	@Transactional
 	public ProfileMatch create(UUID firstProfileId, UUID secondProfileId) {
@@ -27,8 +30,8 @@ public class ProfileMatchService {
 			throw new SelfMatchException(firstProfileId);
 		}
 
-		profileService.findById(firstProfileId);
-		profileService.findById(secondProfileId);
+		pairLockService.lock(firstProfileId, secondProfileId);
+		blockService.ensureInteractionAllowed(firstProfileId, secondProfileId);
 
 		ProfileMatchId matchId = normalizedId(firstProfileId, secondProfileId);
 
@@ -81,11 +84,7 @@ public class ProfileMatchService {
 		profileMatch.setFirstProfileId(matchId.getFirstProfileId());
 		profileMatch.setSecondProfileId(matchId.getSecondProfileId());
 
-		try {
-			return repository.saveAndFlush(profileMatch);
-		} catch (DataIntegrityViolationException exception) {
-			return repository.findById(matchId).orElseThrow(() -> exception);
-		}
+		return repository.saveAndFlush(profileMatch);
 	}
 
 	private ProfileMatchId normalizedId(UUID firstProfileId, UUID secondProfileId) {

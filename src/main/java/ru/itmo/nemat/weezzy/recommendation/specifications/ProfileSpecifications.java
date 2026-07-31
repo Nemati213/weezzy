@@ -3,6 +3,7 @@ package ru.itmo.nemat.weezzy.recommendation.specifications;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
 import org.springframework.data.jpa.domain.Specification;
+import ru.itmo.nemat.weezzy.connection.block.ProfileBlock;
 import ru.itmo.nemat.weezzy.connection.vote.ProfileVote;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileStatus;
@@ -40,6 +41,37 @@ public final class ProfileSpecifications {
 							builder.equal(vote.get("targetProfileId"), root.get("id"))
 					);
 			return builder.not(builder.exists(votes));
+		};
+	}
+
+	public static Specification<Profile> notBlockedBetween(UUID sourceProfileId) {
+		return (root, query, builder) -> {
+			Subquery<UUID> blocks = query.subquery(UUID.class);
+			Root<ProfileBlock> block = blocks.from(ProfileBlock.class);
+			blocks.select(block.get("blockerProfileId"))
+					.where(builder.or(
+							builder.and(
+									builder.equal(
+											block.get("blockerProfileId"),
+											sourceProfileId
+									),
+									builder.equal(
+											block.get("blockedProfileId"),
+											root.get("id")
+									)
+							),
+							builder.and(
+									builder.equal(
+											block.get("blockerProfileId"),
+											root.get("id")
+									),
+									builder.equal(
+											block.get("blockedProfileId"),
+											sourceProfileId
+									)
+							)
+					));
+			return builder.not(builder.exists(blocks));
 		};
 	}
 

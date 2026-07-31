@@ -94,6 +94,7 @@ public class RecommendationService {
 
 		Specification<Profile> spec = ProfileSpecifications.isActive()
 				.and(ProfileSpecifications.notSelf(profileId))
+				.and(ProfileSpecifications.notBlockedBetween(profileId))
 				.and(ProfileSpecifications.notVotedBy(profileId))
 				.and(ProfileSpecifications.notRecentlyShownTo(
 						profileId,
