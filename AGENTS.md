@@ -190,26 +190,19 @@ docker compose up -d
 - Если тесты нельзя прогнать из-за Docker/окружения, честно напиши причину.
 - В финальном ответе кратко перечисли, что изменилось, и какие проверки прошли.
 
-## 6. Текущий статус / Что делаем сейчас (Current State & Roadmap)
+## 6. Текущий фокус (Current Roadmap)
 
-Готово:
+### Pagination
 
-- JWT-аутентификация, роли `USER`/`ADMIN` и current-user endpoints;
-- moderation flow для предложений skills/interests;
-- admin-доступы к очередям предложений;
-- рекомендации с weighted score, reason, cursor и limit;
-- recommendation impressions с cooldown семь дней;
-- фильтры рекомендаций по профилю, skills, interests и goals;
-- исключение votes/impressions и базовая фильтрация кандидатов на уровне БД;
-- matches API текущего пользователя без N+1 при загрузке профилей;
-- Swagger UI с JWT Bearer authentication;
-- подробный русский README.
+- добавить cursor pagination для динамических списков matches и votes;
+- добавить обычную page pagination для profiles и catalogs;
+- использовать единый формат ответа там, где это не ломает существующий API;
+- покрыть границы страниц, сортировку и отсутствие дублей тестами.
 
-Ближайший roadmap:
+### Onboarding
 
-- добавить CI через GitHub Actions;
-- добавить pagination там, где она нужна для profiles, matches, votes и catalogs;
-- определить продуктовую семантику unmatch/block;
-- при росте данных перенести scoring и окончательную сортировку рекомендаций в SQL;
-- подготовить production-конфигурацию и deployment;
-- позже рассмотреть frontend/mobile app, check-ins, фото, чат и richer onboarding.
+- определить минимально заполненный профиль, готовый к рекомендациям;
+- описать шаги: профиль, skills, interests, goals, активация анкеты;
+- возвращать прогресс и список незаполненных шагов для frontend;
+- запретить активацию анкеты, если обязательные шаги не завершены;
+- покрыть переходы между шагами и повторное прохождение тестами.

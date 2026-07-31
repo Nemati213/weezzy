@@ -445,6 +445,42 @@ class RecommendationControllerTests {
 	}
 
 	@Test
+	void recommendationsSkipBlockedProfilesInBothDirections() throws Exception {
+		TestProfile source = createProfile("Recommendation Block Source");
+		TestProfile blockedBySource = createProfile(
+				"Recommendation Blocked By Source"
+		);
+		TestProfile sourceBlockedByCandidate = createProfile(
+				"Recommendation Source Blocked By Candidate"
+		);
+		String goal = idFromLocation(createGoal(
+				"RECOMMENDATION_BLOCK_GOAL",
+				"Recommendation Block Goal"
+		));
+		addGoal(source, goal);
+		addGoal(blockedBySource, goal);
+		addGoal(sourceBlockedByCandidate, goal);
+		activateProfile(blockedBySource);
+		activateProfile(sourceBlockedByCandidate);
+		mockMvc.perform(source.owner().authorize(
+				post("/api/blocks/" + blockedBySource.id())
+		)).andExpect(status().isOk());
+		mockMvc.perform(sourceBlockedByCandidate.owner().authorize(
+				post("/api/blocks/" + source.id())
+		)).andExpect(status().isOk());
+
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content").isEmpty())
+				.andExpect(content().string(not(containsString(
+						"Recommendation Blocked By Source"
+				))))
+				.andExpect(content().string(not(containsString(
+						"Recommendation Source Blocked By Candidate"
+				))));
+	}
+
+	@Test
 	void recommendationsRejectInvalidCursor() throws Exception {
 		TestProfile source = createProfile("Recommendation Invalid Cursor Source");
 

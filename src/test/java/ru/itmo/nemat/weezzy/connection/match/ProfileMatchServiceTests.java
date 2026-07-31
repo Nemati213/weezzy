@@ -5,6 +5,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import ru.itmo.nemat.weezzy.connection.ProfilePairLockService;
+import ru.itmo.nemat.weezzy.connection.block.ProfileBlockService;
+import ru.itmo.nemat.weezzy.connection.block.ProfileInteractionBlockedException;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 
@@ -13,8 +16,11 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -25,6 +31,12 @@ class ProfileMatchServiceTests {
 
 	@Mock
 	private ProfileService profileService;
+
+	@Mock
+	private ProfileBlockService blockService;
+
+	@Mock
+	private ProfilePairLockService pairLockService;
 
 	@InjectMocks
 	private ProfileMatchService matchService;
@@ -61,6 +73,25 @@ class ProfileMatchServiceTests {
 				);
 		verify(profileService, times(1)).findById(sourceProfileId);
 		verify(profileService, times(1)).findAllByIds(matchedProfileIds);
+	}
+
+	@Test
+	void createRejectsProfilesBlockedInEitherDirection() {
+		UUID firstProfileId = UUID.randomUUID();
+		UUID secondProfileId = UUID.randomUUID();
+		doThrow(new ProfileInteractionBlockedException(
+				firstProfileId,
+				secondProfileId
+		)).when(blockService).ensureInteractionAllowed(
+				firstProfileId,
+				secondProfileId
+		);
+
+		assertThatThrownBy(() -> matchService.create(firstProfileId, secondProfileId))
+				.isInstanceOf(ProfileInteractionBlockedException.class);
+
+		verify(pairLockService).lock(firstProfileId, secondProfileId);
+		verifyNoInteractions(matchRepository);
 	}
 
 	private Profile profile(UUID id, String displayName) {
