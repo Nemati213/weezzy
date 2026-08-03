@@ -1,9 +1,13 @@
 package ru.itmo.nemat.weezzy.connection.block;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.itmo.nemat.weezzy.common.dto.CursorPageResponse;
 import ru.itmo.nemat.weezzy.connection.ProfilePairLockService;
+import ru.itmo.nemat.weezzy.connection.event.ProfileInteractionEventService;
+import ru.itmo.nemat.weezzy.connection.event.ProfileInteractionEventType;
 import ru.itmo.nemat.weezzy.connection.block.dto.ProfileBlockResponse;
 import ru.itmo.nemat.weezzy.connection.match.ProfileMatchId;
 import ru.itmo.nemat.weezzy.connection.match.ProfileMatchRepository;
@@ -12,6 +16,7 @@ import ru.itmo.nemat.weezzy.profile.ProfileService;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -23,6 +28,8 @@ public class ProfileBlockService {
 	private final ProfileService profileService;
 	private final ProfileMatchRepository matchRepository;
 	private final ProfilePairLockService pairLockService;
+	private final BlockCursorCodec cursorCodec;
+	private final ProfileInteractionEventService interactionEventService;
 
 	@Transactional
 	public ProfileBlockResponse block(UUID blockerProfileId, UUID blockedProfileId) {
@@ -33,8 +40,15 @@ public class ProfileBlockService {
 		Profile blockedProfile = profileService.findById(blockedProfileId);
 
 		ProfileBlockId blockId = new ProfileBlockId(blockerProfileId, blockedProfileId);
-		ProfileBlock profileBlock = repository.findById(blockId)
-				.orElseGet(() -> saveNewBlock(blockId));
+		Optional<ProfileBlock> existingBlock = repository.findById(blockId);
+		ProfileBlock profileBlock = existingBlock.orElseGet(() -> saveNewBlock(blockId));
+		if (existingBlock.isEmpty()) {
+			interactionEventService.record(
+					blockerProfileId,
+					blockedProfileId,
+					ProfileInteractionEventType.BLOCK
+			);
+		}
 		deleteMatchIfExists(blockerProfileId, blockedProfileId);
 
 		return ProfileBlockResponse.from(profileBlock, blockedProfile);
@@ -47,20 +61,35 @@ public class ProfileBlockService {
 		List<ProfileBlock> blocks =
 				repository.findByBlockerProfileIdOrderByCreatedAtDesc(blockerProfileId);
 
-		Set<UUID> blockedProfileIds = blocks.stream()
-				.map(ProfileBlock::getBlockedProfileId)
-				.collect(Collectors.toSet());
+		return toResponses(blocks);
+	}
 
-		Map<UUID, Profile> profilesById = profileService.findAllByIds(blockedProfileIds)
-				.stream()
-				.collect(Collectors.toMap(Profile::getId, profile -> profile));
+	@Transactional(readOnly = true)
+	public CursorPageResponse<ProfileBlockResponse> findBlocksPageByProfileId(
+			UUID blockerProfileId,
+			String encodedCursor,
+			int limit
+	) {
+		profileService.findById(blockerProfileId);
+		BlockCursor cursor = cursorCodec.decode(encodedCursor);
+		PageRequest pageRequest = PageRequest.of(0, limit + 1);
 
-		return blocks.stream()
-				.map(profileBlock -> ProfileBlockResponse.from(
-						profileBlock,
-						profilesById.get(profileBlock.getBlockedProfileId())
-				))
-				.toList();
+		List<ProfileBlock> fetched = cursor == null
+				? repository.findFirstPage(blockerProfileId, pageRequest)
+				: repository.findNextPage(
+						blockerProfileId,
+						cursor.createdAt(),
+						cursor.blockedProfileId(),
+						pageRequest
+				);
+		boolean hasNext = fetched.size() > limit;
+		List<ProfileBlock> page = fetched.stream().limit(limit).toList();
+		List<ProfileBlockResponse> content = toResponses(page);
+		String nextCursor = hasNext
+				? cursorCodec.encode(toCursor(page.getLast()))
+				: null;
+
+		return new CursorPageResponse<>(content, nextCursor);
 	}
 
 	@Transactional
@@ -72,6 +101,11 @@ public class ProfileBlockService {
 		ProfileBlockId blockId = new ProfileBlockId(blockerProfileId, blockedProfileId);
 		if (repository.existsById(blockId)) {
 			repository.deleteById(blockId);
+			interactionEventService.record(
+					blockerProfileId,
+					blockedProfileId,
+					ProfileInteractionEventType.UNBLOCK
+			);
 		}
 	}
 
@@ -108,5 +142,28 @@ public class ProfileBlockService {
 		profileBlock.setBlockedProfileId(blockId.getBlockedProfileId());
 
 		return repository.saveAndFlush(profileBlock);
+	}
+
+	private List<ProfileBlockResponse> toResponses(List<ProfileBlock> blocks) {
+		Set<UUID> blockedProfileIds = blocks.stream()
+				.map(ProfileBlock::getBlockedProfileId)
+				.collect(Collectors.toSet());
+		Map<UUID, Profile> profilesById = profileService.findAllByIds(blockedProfileIds)
+				.stream()
+				.collect(Collectors.toMap(Profile::getId, profile -> profile));
+
+		return blocks.stream()
+				.map(profileBlock -> ProfileBlockResponse.from(
+						profileBlock,
+						profilesById.get(profileBlock.getBlockedProfileId())
+				))
+				.toList();
+	}
+
+	private BlockCursor toCursor(ProfileBlock profileBlock) {
+		return new BlockCursor(
+				profileBlock.getCreatedAt(),
+				profileBlock.getBlockedProfileId()
+		);
 	}
 }

@@ -1,6 +1,8 @@
 package ru.itmo.nemat.weezzy.skill;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.nemat.weezzy.skill.dto.CreateSkillRequest;
@@ -36,6 +38,11 @@ public class SkillService {
 	@Transactional(readOnly = true)
 	public List<Skill> findAll() {
 		return repository.findAll();
+	}
+
+	@Transactional(readOnly = true)
+	public Page<Skill> findAll(Pageable pageable) {
+		return repository.findAll(pageable);
 	}
 
 	private String normalizeName(String name) {

@@ -106,10 +106,10 @@ class ProfileVoteControllerTests {
 
 		mockMvc.perform(first.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
-				.andExpect(content().json("[]"));
+				.andExpect(jsonPath("$.content").isEmpty());
 		mockMvc.perform(second.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
-				.andExpect(content().json("[]"));
+				.andExpect(jsonPath("$.content").isEmpty());
 	}
 
 	@Test
@@ -174,18 +174,18 @@ class ProfileVoteControllerTests {
 		performVote(first, second.id(), "LIKE").andExpect(status().isOk());
 		mockMvc.perform(first.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
-				.andExpect(content().json("[]"));
+				.andExpect(jsonPath("$.content").isEmpty());
 
 		performVote(second, first.id(), "LIKE").andExpect(status().isOk());
 
 		mockMvc.perform(first.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.length()").value(1))
-				.andExpect(jsonPath("$[0].matchedProfile.id").value(second.id()))
-				.andExpect(jsonPath("$[0].matchedProfile.displayName").value("Vote Match Second"));
+				.andExpect(jsonPath("$.content.length()").value(1))
+				.andExpect(jsonPath("$.content[0].matchedProfile.id").value(second.id()))
+				.andExpect(jsonPath("$.content[0].matchedProfile.displayName").value("Vote Match Second"));
 		mockMvc.perform(second.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$[0].matchedProfile.id").value(first.id()));
+				.andExpect(jsonPath("$.content[0].matchedProfile.id").value(first.id()));
 	}
 
 	@Test
@@ -198,7 +198,7 @@ class ProfileVoteControllerTests {
 
 		mockMvc.perform(first.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
-				.andExpect(content().json("[]"));
+				.andExpect(jsonPath("$.content").isEmpty());
 	}
 
 	@Test
@@ -211,7 +211,7 @@ class ProfileVoteControllerTests {
 
 		mockMvc.perform(first.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.length()").value(1));
+				.andExpect(jsonPath("$.content.length()").value(1));
 	}
 
 	private TestProfile createProfile(String displayName) throws Exception {

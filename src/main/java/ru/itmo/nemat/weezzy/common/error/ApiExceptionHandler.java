@@ -1,6 +1,7 @@
 package ru.itmo.nemat.weezzy.common.error;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -35,6 +36,20 @@ public class ApiExceptionHandler {
 		String message = exception.getBindingResult().getFieldErrors().stream()
 				.findFirst()
 				.map(error -> error.getField() + ": " + error.getDefaultMessage())
+				.orElse("Request validation failed");
+
+		return buildResponse(HttpStatus.BAD_REQUEST, message, request);
+	}
+
+	@ExceptionHandler(ConstraintViolationException.class)
+	public ResponseEntity<ApiErrorResponse> handleConstraintViolation(
+			ConstraintViolationException exception,
+			HttpServletRequest request
+	) {
+		String message = exception.getConstraintViolations().stream()
+				.findFirst()
+				.map(violation -> violation.getPropertyPath() + ": "
+						+ violation.getMessage())
 				.orElse("Request validation failed");
 
 		return buildResponse(HttpStatus.BAD_REQUEST, message, request);

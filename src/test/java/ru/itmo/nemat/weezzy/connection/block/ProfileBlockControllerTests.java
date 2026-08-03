@@ -67,11 +67,11 @@ class ProfileBlockControllerTests {
 
 		mockMvc.perform(blocker.owner().authorize(get("/api/blocks")))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.length()").value(1))
-				.andExpect(jsonPath("$[0].blockedProfile.id").value(blocked.id()));
+				.andExpect(jsonPath("$.content.length()").value(1))
+				.andExpect(jsonPath("$.content[0].blockedProfile.id").value(blocked.id()));
 		mockMvc.perform(blocked.owner().authorize(get("/api/blocks")))
 				.andExpect(status().isOk())
-				.andExpect(content().json("[]"));
+				.andExpect(jsonPath("$.content").isEmpty());
 	}
 
 	@Test
@@ -84,7 +84,7 @@ class ProfileBlockControllerTests {
 
 		mockMvc.perform(blocker.owner().authorize(get("/api/blocks")))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.length()").value(1));
+				.andExpect(jsonPath("$.content.length()").value(1));
 	}
 
 	@Test
@@ -99,11 +99,11 @@ class ProfileBlockControllerTests {
 
 		mockMvc.perform(first.owner().authorize(get("/api/blocks")))
 				.andExpect(status().isOk())
-				.andExpect(content().json("[]"));
+				.andExpect(jsonPath("$.content").isEmpty());
 		mockMvc.perform(second.owner().authorize(get("/api/blocks")))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.length()").value(1))
-				.andExpect(jsonPath("$[0].blockedProfile.id").value(first.id()));
+				.andExpect(jsonPath("$.content.length()").value(1))
+				.andExpect(jsonPath("$.content[0].blockedProfile.id").value(first.id()));
 		performVote(first, second.id(), "LIKE")
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.message").value(containsString(
@@ -122,18 +122,18 @@ class ProfileBlockControllerTests {
 
 		mockMvc.perform(first.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
-				.andExpect(content().json("[]"));
+				.andExpect(jsonPath("$.content").isEmpty());
 		mockMvc.perform(second.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
-				.andExpect(content().json("[]"));
+				.andExpect(jsonPath("$.content").isEmpty());
 		mockMvc.perform(first.owner().authorize(get("/api/votes")))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$[0].targetProfileId").value(second.id()))
-				.andExpect(jsonPath("$[0].action").value("LIKE"));
+				.andExpect(jsonPath("$.content[0].targetProfileId").value(second.id()))
+				.andExpect(jsonPath("$.content[0].action").value("LIKE"));
 		mockMvc.perform(second.owner().authorize(get("/api/votes")))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$[0].targetProfileId").value(first.id()))
-				.andExpect(jsonPath("$[0].action").value("LIKE"));
+				.andExpect(jsonPath("$.content[0].targetProfileId").value(first.id()))
+				.andExpect(jsonPath("$.content[0].action").value("LIKE"));
 	}
 
 	@Test

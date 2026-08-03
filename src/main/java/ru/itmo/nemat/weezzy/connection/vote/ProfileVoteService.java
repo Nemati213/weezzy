@@ -1,12 +1,17 @@
 package ru.itmo.nemat.weezzy.connection.vote;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.itmo.nemat.weezzy.common.dto.CursorPageResponse;
 import ru.itmo.nemat.weezzy.connection.ProfilePairLockService;
 import ru.itmo.nemat.weezzy.connection.block.ProfileBlockService;
+import ru.itmo.nemat.weezzy.connection.event.ProfileInteractionEventService;
+import ru.itmo.nemat.weezzy.connection.event.ProfileInteractionEventType;
 import ru.itmo.nemat.weezzy.connection.match.ProfileMatchService;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
+import ru.itmo.nemat.weezzy.connection.vote.dto.VoteResponse;
 
 import java.util.List;
 import java.util.Set;
@@ -21,6 +26,8 @@ public class ProfileVoteService {
 	private final ProfileMatchService matchService;
 	private final ProfileBlockService blockService;
 	private final ProfilePairLockService pairLockService;
+	private final VoteCursorCodec cursorCodec;
+	private final ProfileInteractionEventService interactionEventService;
 
 	@Transactional
 	public ProfileVote vote(UUID sourceProfileId, UUID targetProfileId, ProfileVoteAction action) {
@@ -44,6 +51,13 @@ public class ProfileVoteService {
 		vote.setAction(action);
 
 		ProfileVote savedVote = repository.save(vote);
+		interactionEventService.record(
+				sourceProfileId,
+				targetProfileId,
+				action == ProfileVoteAction.LIKE
+						? ProfileInteractionEventType.LIKE
+						: ProfileInteractionEventType.PASS
+		);
 		if (action == ProfileVoteAction.LIKE) {
 			repository.findBySourceProfileIdAndTargetProfileId(targetProfileId, sourceProfileId)
 					.filter(reciprocalVote -> reciprocalVote.getAction() == ProfileVoteAction.LIKE)
@@ -63,11 +77,48 @@ public class ProfileVoteService {
 	}
 
 	@Transactional(readOnly = true)
+	public CursorPageResponse<VoteResponse> findPageBySourceProfileId(
+			UUID sourceProfileId,
+			String encodedCursor,
+			int limit
+	) {
+		profileService.findById(sourceProfileId);
+		VoteCursor cursor = cursorCodec.decode(encodedCursor);
+		PageRequest pageRequest = PageRequest.of(0, limit + 1);
+
+		List<ProfileVote> fetched = cursor == null
+				? repository.findFirstPage(sourceProfileId, pageRequest)
+				: repository.findNextPage(
+						sourceProfileId,
+						cursor.createdAt(),
+						cursor.targetProfileId(),
+						pageRequest
+				);
+
+		boolean hasNext = fetched.size() > limit;
+		List<ProfileVote> page = fetched.stream()
+				.limit(limit)
+				.toList();
+		String nextCursor = hasNext
+				? cursorCodec.encode(toCursor(page.getLast()))
+				: null;
+
+		return new CursorPageResponse<>(
+				page.stream().map(VoteResponse::from).toList(),
+				nextCursor
+		);
+	}
+
+	@Transactional(readOnly = true)
 	public Set<UUID> findVotedTargetProfileIds(UUID sourceProfileId) {
 		profileService.findById(sourceProfileId);
 
 		return repository.findBySourceProfileId(sourceProfileId).stream()
 				.map(ProfileVote::getTargetProfileId)
 				.collect(Collectors.toSet());
+	}
+
+	private VoteCursor toCursor(ProfileVote vote) {
+		return new VoteCursor(vote.getCreatedAt(), vote.getTargetProfileId());
 	}
 }

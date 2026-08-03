@@ -1,6 +1,8 @@
 package ru.itmo.nemat.weezzy.goal;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.nemat.weezzy.onboarding.OnboardingService;
@@ -37,6 +39,10 @@ public class GoalService {
 	public Goal findById(UUID id) {
 		return repository.findById(id)
 				.orElseThrow(() -> new GoalNotFoundException(id));
+	}
+	@Transactional(readOnly = true)
+	public Page<Goal> findAll(Pageable pageable) {
+		return repository.findAll(pageable);
 	}
 
 	@Transactional(readOnly = true)

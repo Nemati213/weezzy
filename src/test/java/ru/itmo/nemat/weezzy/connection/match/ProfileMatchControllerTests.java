@@ -58,7 +58,7 @@ class ProfileMatchControllerTests {
 
 		mockMvc.perform(profile.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
-				.andExpect(content().json("[]"));
+				.andExpect(jsonPath("$.content").isEmpty());
 	}
 
 	@Test
@@ -72,13 +72,13 @@ class ProfileMatchControllerTests {
 
 		mockMvc.perform(current.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.length()").value(1))
-				.andExpect(jsonPath("$[0].matchedProfile.id").value(matched.id()))
-				.andExpect(jsonPath("$[0].matchedProfile.displayName")
+				.andExpect(jsonPath("$.content.length()").value(1))
+				.andExpect(jsonPath("$.content[0].matchedProfile.id").value(matched.id()))
+				.andExpect(jsonPath("$.content[0].matchedProfile.displayName")
 						.value("Match Own Candidate"))
-				.andExpect(jsonPath("$[0].matchedProfile.telegram")
+				.andExpect(jsonPath("$.content[0].matchedProfile.telegram")
 						.value("@authenticated_test"))
-				.andExpect(jsonPath("$[0].createdAt").isNotEmpty())
+				.andExpect(jsonPath("$.content[0].createdAt").isNotEmpty())
 				.andExpect(content().string(not(containsString(outsiderFirst.id()))))
 				.andExpect(content().string(not(containsString(outsiderSecond.id()))));
 	}
@@ -108,17 +108,17 @@ class ProfileMatchControllerTests {
 
 		mockMvc.perform(first.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
-				.andExpect(content().json("[]"));
+				.andExpect(jsonPath("$.content").isEmpty());
 		mockMvc.perform(second.owner().authorize(get("/api/matches")))
 				.andExpect(status().isOk())
-				.andExpect(content().json("[]"));
+				.andExpect(jsonPath("$.content").isEmpty());
 		mockMvc.perform(first.owner().authorize(get("/api/votes")))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$[0].targetProfileId").value(second.id()))
-				.andExpect(jsonPath("$[0].action").value("PASS"));
+				.andExpect(jsonPath("$.content[0].targetProfileId").value(second.id()))
+				.andExpect(jsonPath("$.content[0].action").value("PASS"));
 		mockMvc.perform(second.owner().authorize(get("/api/votes")))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$[0].action").value("LIKE"));
+				.andExpect(jsonPath("$.content[0].action").value("LIKE"));
 		mockMvc.perform(first.owner().authorize(get(second.location())))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.telegram").doesNotExist());

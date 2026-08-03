@@ -1,6 +1,8 @@
 package ru.itmo.nemat.weezzy.interest;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.nemat.weezzy.onboarding.OnboardingService;
@@ -40,6 +42,10 @@ public class InterestService {
 	@Transactional(readOnly = true)
 	public List<Interest> findAll() {
 		return repository.findAll();
+	}
+	@Transactional(readOnly = true)
+	public Page<Interest> findAll(Pageable pageable) {
+		return repository.findAll(pageable);
 	}
 
 	@Transactional

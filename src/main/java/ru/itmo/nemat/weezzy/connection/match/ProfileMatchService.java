@@ -1,10 +1,14 @@
 package ru.itmo.nemat.weezzy.connection.match;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.itmo.nemat.weezzy.common.dto.CursorPageResponse;
 import ru.itmo.nemat.weezzy.connection.ProfilePairLockService;
 import ru.itmo.nemat.weezzy.connection.block.ProfileBlockService;
+import ru.itmo.nemat.weezzy.connection.event.ProfileInteractionEventService;
+import ru.itmo.nemat.weezzy.connection.event.ProfileInteractionEventType;
 import ru.itmo.nemat.weezzy.connection.match.dto.ProfileMatchResponse;
 import ru.itmo.nemat.weezzy.connection.vote.ProfileVoteAction;
 import ru.itmo.nemat.weezzy.connection.vote.ProfileVoteRepository;
@@ -26,6 +30,8 @@ public class ProfileMatchService {
 	private final ProfileBlockService blockService;
 	private final ProfilePairLockService pairLockService;
 	private final ProfileVoteRepository voteRepository;
+	private final MatchCursorCodec cursorCodec;
+	private final ProfileInteractionEventService interactionEventService;
 
 	@Transactional
 	public ProfileMatch create(UUID firstProfileId, UUID secondProfileId) {
@@ -39,7 +45,11 @@ public class ProfileMatchService {
 		ProfileMatchId matchId = normalizedId(firstProfileId, secondProfileId);
 
 		return repository.findById(matchId)
-				.orElseGet(() -> saveNewMatch(matchId));
+				.orElseGet(() -> saveNewMatch(
+						matchId,
+						firstProfileId,
+						secondProfileId
+				));
 	}
 
 	@Transactional(readOnly = true)
@@ -52,6 +62,41 @@ public class ProfileMatchService {
 						profileId
 				);
 
+		return toResponses(profileId, matches);
+	}
+
+	@Transactional(readOnly = true)
+	public CursorPageResponse<ProfileMatchResponse> findMatchesPageByProfileId(
+			UUID profileId,
+			String encodedCursor,
+			int limit
+	) {
+		profileService.findById(profileId);
+		MatchCursor cursor = cursorCodec.decode(encodedCursor);
+		PageRequest pageRequest = PageRequest.of(0, limit + 1);
+
+		List<ProfileMatch> fetched = cursor == null
+				? repository.findFirstPage(profileId, pageRequest)
+				: repository.findNextPage(
+						profileId,
+						cursor.createdAt(),
+						cursor.firstProfileId(),
+						cursor.secondProfileId(),
+						pageRequest
+				);
+		boolean hasNext = fetched.size() > limit;
+		List<ProfileMatch> page = fetched.stream().limit(limit).toList();
+		String nextCursor = hasNext
+				? cursorCodec.encode(toCursor(page.getLast()))
+				: null;
+
+		return new CursorPageResponse<>(toResponses(profileId, page), nextCursor);
+	}
+
+	private List<ProfileMatchResponse> toResponses(
+			UUID profileId,
+			List<ProfileMatch> matches
+	) {
 		Set<UUID> matchedProfileIds = matches.stream()
 				.map(profileMatch -> otherProfileId(profileId, profileMatch))
 				.collect(Collectors.toSet());
@@ -63,8 +108,7 @@ public class ProfileMatchService {
 						Function.identity()
 				));
 
-		return matches
-				.stream()
+		return matches.stream()
 				.map(profileMatch -> ProfileMatchResponse.from(
 						profileMatch,
 						profilesById.get(otherProfileId(profileId, profileMatch))
@@ -112,6 +156,11 @@ public class ProfileMatchService {
 					voteRepository.save(vote);
 				});
 		repository.deleteById(matchId);
+		interactionEventService.record(
+				sourceProfileId,
+				matchedProfileId,
+				ProfileInteractionEventType.UNMATCH
+		);
 	}
 
 	private UUID otherProfileId(UUID sourceProfileId, ProfileMatch profileMatch) {
@@ -124,12 +173,22 @@ public class ProfileMatchService {
 		throw new IllegalArgumentException("Profile is not part of match: " + sourceProfileId);
 	}
 
-	private ProfileMatch saveNewMatch(ProfileMatchId matchId) {
+	private ProfileMatch saveNewMatch(
+			ProfileMatchId matchId,
+			UUID sourceProfileId,
+			UUID targetProfileId
+	) {
 		ProfileMatch profileMatch = new ProfileMatch();
 		profileMatch.setFirstProfileId(matchId.getFirstProfileId());
 		profileMatch.setSecondProfileId(matchId.getSecondProfileId());
 
-		return repository.saveAndFlush(profileMatch);
+		ProfileMatch savedMatch = repository.saveAndFlush(profileMatch);
+		interactionEventService.record(
+				sourceProfileId,
+				targetProfileId,
+				ProfileInteractionEventType.MATCH
+		);
+		return savedMatch;
 	}
 
 	private ProfileMatchId normalizedId(UUID firstProfileId, UUID secondProfileId) {
@@ -138,5 +197,13 @@ public class ProfileMatchService {
 		}
 
 		return new ProfileMatchId(secondProfileId, firstProfileId);
+	}
+
+	private MatchCursor toCursor(ProfileMatch profileMatch) {
+		return new MatchCursor(
+				profileMatch.getCreatedAt(),
+				profileMatch.getFirstProfileId(),
+				profileMatch.getSecondProfileId()
+		);
 	}
 }

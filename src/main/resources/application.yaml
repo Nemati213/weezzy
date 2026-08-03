@@ -5,6 +5,12 @@ spring:
     default: local
 
 app:
+  recommendation:
+    weights:
+      skill: 3
+      interest: 2
+      goal: 5
+    impression-cooldown: 7d
   security:
     jwt:
       secret: weezzy-dev-secret-must-be-changed-before-production-123456
