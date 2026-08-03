@@ -6,6 +6,9 @@ spring:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+  data:
+    redis:
+      url: ${REDIS_URL}
   flyway:
     enabled: true
   jpa:
@@ -21,6 +24,19 @@ app:
     jwt:
       secret: ${JWT_SECRET}
       access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT1H}
+    rate-limit:
+      enabled: true
+      login:
+        capacity: ${LOGIN_RATE_LIMIT_CAPACITY:10}
+        window: ${LOGIN_RATE_LIMIT_WINDOW:1m}
+      register:
+        capacity: ${REGISTER_RATE_LIMIT_CAPACITY:5}
+        window: ${REGISTER_RATE_LIMIT_WINDOW:1h}
+
+management:
+  health:
+    redis:
+      enabled: true
 
 logging:
   structured:

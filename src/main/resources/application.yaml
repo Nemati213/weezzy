@@ -1,6 +1,10 @@
 spring:
   application:
     name: weezzy
+  data:
+    redis:
+      repositories:
+        enabled: false
   profiles:
     default: local
 
@@ -15,6 +19,14 @@ app:
     jwt:
       secret: weezzy-dev-secret-must-be-changed-before-production-123456
       access-token-ttl: PT1H
+    rate-limit:
+      enabled: false
+      login:
+        capacity: 10
+        window: 1m
+      register:
+        capacity: 5
+        window: 1h
 
 management:
   endpoints:
@@ -31,6 +43,8 @@ management:
       enabled: true
     readinessstate:
       enabled: true
+    redis:
+      enabled: false
   metrics:
     tags:
       application: ${spring.application.name}
