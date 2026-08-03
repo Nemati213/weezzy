@@ -18,9 +18,11 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @Testcontainers
@@ -143,7 +145,80 @@ class AuthControllerTests {
 	@Test
 	void meRejectsMissingToken() throws Exception {
 		mockMvc.perform(get("/api/auth/me"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(header().exists("X-Request-ID"))
+				.andExpect(jsonPath("$.status").value(401))
+				.andExpect(jsonPath("$.error").value("Unauthorized"))
+				.andExpect(jsonPath("$.message").value("Authentication is required"))
+				.andExpect(jsonPath("$.path").value("/api/auth/me"))
+				.andExpect(jsonPath("$.requestId").isNotEmpty());
+	}
+
+	@Test
+	void authorizationFailureUsesSameErrorFormat() throws Exception {
+		String token = registerAndGetToken("forbidden-user@itmo.ru", "password123");
+
+		mockMvc.perform(post("/api/goals")
+						.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "name": "Forbidden goal",
+								  "description": "Regular users cannot create goals"
+								}
+								"""))
+				.andExpect(status().isForbidden())
+				.andExpect(header().exists("X-Request-ID"))
+				.andExpect(jsonPath("$.status").value(403))
+				.andExpect(jsonPath("$.error").value("Forbidden"))
+				.andExpect(jsonPath("$.message").value("Access is denied"))
+				.andExpect(jsonPath("$.path").value("/api/goals"))
+				.andExpect(jsonPath("$.requestId").isNotEmpty());
+	}
+
+	@Test
+	void requestIdIsPropagatedThroughApiErrors() throws Exception {
+		String requestId = "mobile-request-42";
+
+		mockMvc.perform(post("/api/auth/register")
+						.header("X-Request-ID", requestId)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "email": "invalid-email",
+								  "password": "password123"
+								}
+								"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(header().string("X-Request-ID", requestId))
+				.andExpect(jsonPath("$.requestId").value(requestId));
+	}
+
+	@Test
+	void actuatorHealthProbesArePublic() throws Exception {
+		mockMvc.perform(get("/actuator/health/liveness"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("UP"));
+
+		mockMvc.perform(get("/actuator/health/readiness"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("UP"));
+	}
+
+	@Test
+	void actuatorMetricsRequireAuthentication() throws Exception {
+		mockMvc.perform(get("/actuator/metrics"))
 				.andExpect(status().isUnauthorized());
+
+		String token = registerAndGetToken("metrics-user@itmo.ru", "password123");
+		mockMvc.perform(get("/actuator/metrics")
+						.header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.names", hasItem("http.server.requests")));
+
+		mockMvc.perform(get("/actuator/prometheus")
+						.header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+				.andExpect(status().isOk());
 	}
 
 	@Test

@@ -1,0 +1,31 @@
+spring:
+  config:
+    activate:
+      on-profile: production
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  flyway:
+    enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+server:
+  forward-headers-strategy: framework
+
+app:
+  security:
+    jwt:
+      secret: ${JWT_SECRET}
+      access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT1H}
+
+logging:
+  structured:
+    format:
+      console: ecs
+    ecs:
+      service:
+        name: ${spring.application.name}

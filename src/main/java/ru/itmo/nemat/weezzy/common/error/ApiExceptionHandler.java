@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import ru.itmo.nemat.weezzy.common.exception.BadRequestException;
 import ru.itmo.nemat.weezzy.common.exception.ConflictException;
 import ru.itmo.nemat.weezzy.common.exception.NotFoundException;
+import ru.itmo.nemat.weezzy.common.observability.RequestCorrelationFilter;
 
 import java.time.LocalDateTime;
 
@@ -61,7 +62,8 @@ public class ApiExceptionHandler {
 				status.value(),
 				status.getReasonPhrase(),
 				message,
-				request.getRequestURI()
+				request.getRequestURI(),
+				RequestCorrelationFilter.getRequestId(request)
 		));
 	}
 }

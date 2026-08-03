@@ -15,3 +15,27 @@ app:
     jwt:
       secret: weezzy-dev-secret-must-be-changed-before-production-123456
       access-token-ttl: PT1H
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+info:
+  app:
+    name: ${spring.application.name}
+    version: ${WEEZZY_VERSION:dev}
