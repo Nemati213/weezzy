@@ -14,7 +14,8 @@ import ru.itmo.nemat.weezzy.user.dto.RegistrationResponse;
 import ru.itmo.nemat.weezzy.user.emailverification.EmailNotVerifiedException;
 import ru.itmo.nemat.weezzy.user.emailverification.EmailVerificationRequestedEvent;
 import ru.itmo.nemat.weezzy.user.emailverification.EmailVerificationService;
-import ru.itmo.nemat.weezzy.user.emailverification.EmailVerificationService.IssuedEmailVerificationToken;
+import ru.itmo.nemat.weezzy.user.passwordreset.PasswordResetRequestedEvent;
+import ru.itmo.nemat.weezzy.user.passwordreset.PasswordResetService;
 
 import java.util.UUID;
 
@@ -25,6 +26,7 @@ public class AuthService {
 	private final JwtService jwtService;
 	private final AuthSessionService authSessionService;
 	private final EmailVerificationService emailVerificationService;
+	private final PasswordResetService passwordResetService;
 	private final ApplicationEventPublisher eventPublisher;
 
 	@Transactional
@@ -33,7 +35,8 @@ public class AuthService {
 			String rawPassword
 	) {
 		User user = userService.register(email, rawPassword);
-		IssuedEmailVerificationToken issuedToken = emailVerificationService.createToken(user);
+		EmailVerificationService.IssuedEmailVerificationToken issuedToken =
+				emailVerificationService.createToken(user);
 		publishVerificationEvent(user, issuedToken);
 		return new RegistrationResponse(user.getEmail(), true);
 	}
@@ -88,7 +91,32 @@ public class AuthService {
 		);
 	}
 
-	private AuthTokenResponse createTokenResponse(User user, IssuedRefreshToken refreshToken) {
+	@Transactional
+	public void requestPasswordReset(String email) {
+		userService.findOptionalByEmail(email).ifPresent(user -> {
+			PasswordResetService.IssuedPasswordResetToken issuedToken =
+					passwordResetService.createToken(user);
+			eventPublisher.publishEvent(new PasswordResetRequestedEvent(
+					user.getEmail(),
+					issuedToken.value(),
+					issuedToken.expiresAt()
+			));
+		});
+	}
+
+	@Transactional
+	public void resetPassword(String rawResetToken, String newRawPassword) {
+		UUID userId = passwordResetService.resetPassword(
+				rawResetToken,
+				newRawPassword
+		);
+		authSessionService.revokeAllAfterPasswordReset(userId);
+	}
+
+	private AuthTokenResponse createTokenResponse(
+			User user,
+			IssuedRefreshToken refreshToken
+	) {
 		return AuthTokenResponse.bearer(
 				jwtService.generateAccessToken(user),
 				refreshToken.value(),
@@ -100,7 +128,7 @@ public class AuthService {
 
 	private void publishVerificationEvent(
 			User user,
-			IssuedEmailVerificationToken issuedToken
+			EmailVerificationService.IssuedEmailVerificationToken issuedToken
 	) {
 		eventPublisher.publishEvent(new EmailVerificationRequestedEvent(
 				user.getEmail(),

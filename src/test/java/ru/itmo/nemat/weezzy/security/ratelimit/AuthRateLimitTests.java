@@ -38,7 +38,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 		"app.security.rate-limit.register.capacity=1",
 		"app.security.rate-limit.register.window=1m",
 		"app.security.rate-limit.email-resend.capacity=1",
-		"app.security.rate-limit.email-resend.window=1m"
+		"app.security.rate-limit.email-resend.window=1m",
+		"app.security.rate-limit.password-forgot.capacity=1",
+		"app.security.rate-limit.password-forgot.window=1m"
 })
 @AutoConfigureMockMvc
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
@@ -122,6 +124,18 @@ class AuthRateLimitTests {
 	}
 
 	@Test
+	void forgotPasswordIsRateLimited() throws Exception {
+		String clientAddress = "198.51.100.40";
+
+		forgotPassword(clientAddress)
+				.andExpect(status().isAccepted())
+				.andExpect(header().string("X-RateLimit-Remaining", "0"));
+		forgotPassword(clientAddress)
+				.andExpect(status().isTooManyRequests())
+				.andExpect(jsonPath("$.path").value("/api/auth/password/forgot"));
+	}
+
+	@Test
 	void redisScriptEnforcesCapacityAtomically() throws Exception {
 		ExecutorService executor = Executors.newFixedThreadPool(12);
 		try {
@@ -188,6 +202,17 @@ class AuthRateLimitTests {
 				.content("""
 						{
 						  "email": "missing-resend-rate-user@itmo.ru"
+						}
+						"""));
+	}
+
+	private ResultActions forgotPassword(String clientAddress) throws Exception {
+		return mockMvc.perform(post("/api/auth/password/forgot")
+				.with(from(clientAddress))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "email": "missing-password-reset-rate-user@itmo.ru"
 						}
 						"""));
 	}

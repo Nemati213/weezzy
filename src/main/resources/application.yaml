@@ -35,8 +35,13 @@ app:
       email-resend:
         capacity: 3
         window: 1h
+      password-forgot:
+        capacity: 3
+        window: 1h
     email-verification:
       token-ttl: PT24H
+    password-reset:
+      token-ttl: PT30M
   mail:
     from: no-reply@weezzy.local
 

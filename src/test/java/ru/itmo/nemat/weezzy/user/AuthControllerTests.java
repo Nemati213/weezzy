@@ -17,6 +17,7 @@ import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import ru.itmo.nemat.weezzy.user.emailverification.LocalEmailVerificationSender;
+import ru.itmo.nemat.weezzy.user.passwordreset.LocalPasswordResetSender;
 
 import java.util.Locale;
 
@@ -164,6 +165,91 @@ class AuthControllerTests {
 		assertThat(LocalEmailVerificationSender.takeToken(email)).isEmpty();
 		resendEmailVerification("missing-resend@itmo.ru")
 				.andExpect(status().isAccepted());
+	}
+
+	@Test
+	void forgotPasswordAlwaysReturnsAcceptedAndSendsOnlyForExistingUser()
+			throws Exception {
+		String email = "forgot-password@itmo.ru";
+		registerAndVerify(email, "password123");
+
+		forgotPassword(email)
+				.andExpect(status().isAccepted());
+		assertThat(takePasswordResetToken(email)).isNotBlank();
+
+		String missingEmail = "missing-forgot-password@itmo.ru";
+		forgotPassword(missingEmail)
+				.andExpect(status().isAccepted());
+		assertThat(LocalPasswordResetSender.takeToken(missingEmail)).isEmpty();
+	}
+
+	@Test
+	void resetPasswordChangesCredentialsAndConsumesToken() throws Exception {
+		String email = "reset-password@itmo.ru";
+		registerAndVerify(email, "password123");
+		forgotPassword(email).andExpect(status().isAccepted());
+		String resetToken = takePasswordResetToken(email);
+
+		resetPassword(resetToken, "new-password123")
+				.andExpect(status().isNoContent());
+
+		login(email, "password123")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Invalid email or password"));
+		login(email, "new-password123")
+				.andExpect(status().isOk());
+		resetPassword(resetToken, "another-password123")
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message")
+						.value("Password reset token is invalid or expired"));
+	}
+
+	@Test
+	void newPasswordResetRequestInvalidatesPreviousToken() throws Exception {
+		String email = "replace-reset-token@itmo.ru";
+		registerAndVerify(email, "password123");
+		forgotPassword(email).andExpect(status().isAccepted());
+		String firstToken = takePasswordResetToken(email);
+		forgotPassword(email).andExpect(status().isAccepted());
+		String replacementToken = takePasswordResetToken(email);
+
+		assertThat(replacementToken).isNotEqualTo(firstToken);
+		resetPassword(firstToken, "new-password123")
+				.andExpect(status().isUnauthorized());
+		resetPassword(replacementToken, "new-password123")
+				.andExpect(status().isNoContent());
+	}
+
+	@Test
+	void resetPasswordRevokesAllRefreshSessions() throws Exception {
+		String email = "reset-revokes-sessions@itmo.ru";
+		JsonNode firstSession = registerAndRead(email, "password123");
+		JsonNode secondSession = loginAndRead(email, "password123");
+		forgotPassword(email).andExpect(status().isAccepted());
+
+		resetPassword(takePasswordResetToken(email), "new-password123")
+				.andExpect(status().isNoContent());
+
+		refresh(firstSession.path("refreshToken").asText())
+				.andExpect(status().isUnauthorized());
+		refresh(secondSession.path("refreshToken").asText())
+				.andExpect(status().isUnauthorized());
+		login(email, "new-password123")
+				.andExpect(status().isOk());
+	}
+
+	@Test
+	void resetPasswordDoesNotVerifyEmail() throws Exception {
+		String email = "unverified-password-reset@itmo.ru";
+		register(email, "password123").andExpect(status().isCreated());
+		forgotPassword(email).andExpect(status().isAccepted());
+
+		resetPassword(takePasswordResetToken(email), "new-password123")
+				.andExpect(status().isNoContent());
+
+		login(email, "new-password123")
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value("Email is not verified"));
 	}
 
 	@Test
@@ -389,6 +475,10 @@ class AuthControllerTests {
 						.doesNotExist())
 				.andExpect(jsonPath("$.paths['/api/auth/email/resend'].post.security")
 						.doesNotExist())
+				.andExpect(jsonPath("$.paths['/api/auth/password/forgot'].post.security")
+						.doesNotExist())
+				.andExpect(jsonPath("$.paths['/api/auth/password/reset'].post.security")
+						.doesNotExist())
 				.andExpect(jsonPath(
 						"$.paths['/api/recommendations'].get.security[0].bearerAuth"
 				).isArray())
@@ -443,6 +533,24 @@ class AuthControllerTests {
 				.content(objectMapper.writeValueAsString(java.util.Map.of("email", email))));
 	}
 
+	private ResultActions forgotPassword(String email) throws Exception {
+		return mockMvc.perform(post("/api/auth/password/forgot")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(objectMapper.writeValueAsString(java.util.Map.of("email", email))));
+	}
+
+	private ResultActions resetPassword(
+			String resetToken,
+			String newPassword
+	) throws Exception {
+		return mockMvc.perform(post("/api/auth/password/reset")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(objectMapper.writeValueAsString(java.util.Map.of(
+						"token", resetToken,
+						"newPassword", newPassword
+				))));
+	}
+
 	private JsonNode registerAndRead(String email, String password) throws Exception {
 		registerAndVerify(email, password);
 		String response = login(email, password)
@@ -463,6 +571,14 @@ class AuthControllerTests {
 		return LocalEmailVerificationSender.takeToken(normalizedEmail)
 				.orElseThrow(() -> new IllegalStateException(
 						"No local verification token was sent to " + normalizedEmail
+				));
+	}
+
+	private String takePasswordResetToken(String email) {
+		String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
+		return LocalPasswordResetSender.takeToken(normalizedEmail)
+				.orElseThrow(() -> new IllegalStateException(
+						"No local password reset token was sent to " + normalizedEmail
 				));
 	}
 

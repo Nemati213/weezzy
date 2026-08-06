@@ -21,6 +21,8 @@ import ru.itmo.nemat.weezzy.user.dto.RegisterRequest;
 import ru.itmo.nemat.weezzy.user.dto.RegistrationResponse;
 import ru.itmo.nemat.weezzy.user.dto.ResendEmailVerificationRequest;
 import ru.itmo.nemat.weezzy.user.dto.VerifyEmailRequest;
+import ru.itmo.nemat.weezzy.user.passwordreset.dto.ForgotPasswordRequest;
+import ru.itmo.nemat.weezzy.user.passwordreset.dto.ResetPasswordRequest;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -72,6 +74,22 @@ public class AuthController {
 	) {
 		authService.resendEmailVerification(request.email());
 		return ResponseEntity.accepted().build();
+	}
+
+	@PostMapping("/password/forgot")
+	public ResponseEntity<Void> forgotPassword(
+			@Valid @RequestBody ForgotPasswordRequest request
+	) {
+		authService.requestPasswordReset(request.email());
+		return ResponseEntity.accepted().build();
+	}
+
+	@PostMapping("/password/reset")
+	public ResponseEntity<Void> resetPassword(
+			@Valid @RequestBody ResetPasswordRequest request
+	) {
+		authService.resetPassword(request.token(), request.newPassword());
+		return ResponseEntity.noContent().build();
 	}
 
 	@PostMapping("/logout")

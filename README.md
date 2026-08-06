@@ -14,6 +14,7 @@ Weezzy — backend внутреннего ITMO-сервиса для нетво�
 
 - регистрация и вход по email/password;
 - обязательное подтверждение email, повторная отправка и SMTP в production;
+- восстановление пароля одноразовой ссылкой и отзыв активных сессий;
 - короткоживущие access JWT, refresh token rotation и сессии устройств;
 - logout одной сессии и отзыв всех сессий пользователя;
 - роли `USER`/`ADMIN`;
@@ -138,6 +139,9 @@ REGISTER_RATE_LIMIT_WINDOW=1h
 EMAIL_VERIFICATION_TOKEN_TTL=PT24H
 EMAIL_RESEND_RATE_LIMIT_CAPACITY=3
 EMAIL_RESEND_RATE_LIMIT_WINDOW=1h
+PASSWORD_RESET_TOKEN_TTL=PT30M
+PASSWORD_FORGOT_RATE_LIMIT_CAPACITY=3
+PASSWORD_FORGOT_RATE_LIMIT_WINDOW=1h
 MAIL_PORT=587
 WEEZZY_VERSION=<release-version>
 ```
@@ -154,6 +158,8 @@ Production profile не содержит fallback-значений для БД, 
 - `POST /api/auth/refresh`;
 - `POST /api/auth/email/verify`;
 - `POST /api/auth/email/resend`;
+- `POST /api/auth/password/forgot`;
+- `POST /api/auth/password/reset`;
 - `/v3/api-docs/**`;
 - `/swagger-ui/**`;
 - `/actuator/health` и `/actuator/health/**`.
@@ -171,7 +177,13 @@ Access token по умолчанию действует 15 минут. Вызо�
 refresh token новым; повторное использование уже заменённого токена отзывает всю
 сессию устройства. В базе хранится только SHA-256 hash секрета refresh token.
 
-В production login и register ограничиваются по IP и операции. При исчерпании
+Запрос восстановления пароля всегда возвращает `202 Accepted`, независимо от
+существования email. Ссылка действует 30 минут, повторный запрос отзывает предыдущую.
+После успешной смены пароля все refresh-сессии пользователя отзываются. Сброс пароля
+не подтверждает email автоматически.
+
+В production login, register, повторная отправка email и запрос восстановления
+пароля ограничиваются по IP и операции. При исчерпании
 лимита API возвращает `429 Too Many Requests`, `Retry-After`,
 `X-RateLimit-Limit` и `X-RateLimit-Remaining`. Redis-операция атомарна, поэтому
 лимит корректен при нескольких инстансах приложения. При недоступном Redis auth
@@ -192,6 +204,8 @@ structured logs и тело API-ошибки.
 | `POST` | `/api/auth/refresh` | Rotation refresh token и новая пара токенов |
 | `POST` | `/api/auth/email/verify` | Подтверждение email одноразовым токеном |
 | `POST` | `/api/auth/email/resend` | Повторная отправка письма подтверждения |
+| `POST` | `/api/auth/password/forgot` | Отправка ссылки восстановления пароля |
+| `POST` | `/api/auth/password/reset` | Смена пароля одноразовым токеном |
 | `POST` | `/api/auth/logout` | Отзыв текущей сессии |
 | `POST` | `/api/auth/logout-all` | Отзыв всех сессий пользователя |
 | `GET` | `/api/auth/me` | Текущий пользователь |
@@ -455,7 +469,6 @@ authenticated principal, бизнес-логика находится в service
 
 ## Ближайший roadmap
 
-- восстановление пароля;
 - фотографии профиля через S3-compatible object storage;
 - reports, moderation и блокировка аккаунтов;
 - notifications и transactional outbox;

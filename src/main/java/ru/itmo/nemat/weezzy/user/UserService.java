@@ -65,6 +65,12 @@ public class UserService {
 		return passwordEncoder.matches(rawPassword, user.getPasswordHash());
 	}
 
+	@Transactional
+	public void updatePassword(User user, String newRawPassword) {
+		user.setPasswordHash(passwordEncoder.encode(newRawPassword));
+		userRepository.save(user);
+	}
+
 	private String normalizeEmail(String email) {
 		return email.trim().toLowerCase(Locale.ROOT);
 	}

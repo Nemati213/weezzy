@@ -15,7 +15,8 @@ public record AuthRateLimitProperties(
 		boolean enabled,
 		@Valid @NotNull Policy login,
 		@Valid @NotNull Policy register,
-		@Valid @NotNull Policy emailResend
+		@Valid @NotNull Policy emailResend,
+		@Valid @NotNull Policy passwordForgot
 ) {
 	public record Policy(
 			@Min(1) int capacity,

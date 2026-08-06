@@ -109,10 +109,19 @@ public class AuthSessionService {
 
 	@Transactional
 	public void logoutAll(UUID userId) {
+		revokeAll(userId, AuthSessionRevokeReason.LOGOUT_ALL);
+	}
+
+	@Transactional
+	public void revokeAllAfterPasswordReset(UUID userId) {
+		revokeAll(userId, AuthSessionRevokeReason.PASSWORD_RESET);
+	}
+
+	private void revokeAll(UUID userId, AuthSessionRevokeReason reason) {
 		authSessionRepository.revokeAllByUserId(
 				userId,
 				LocalDateTime.now(),
-				AuthSessionRevokeReason.LOGOUT_ALL.name()
+				reason.name()
 		);
 	}
 

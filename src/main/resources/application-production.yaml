@@ -42,6 +42,8 @@ app:
       max-ttl: ${AUTH_SESSION_MAX_TTL:P90D}
     email-verification:
       token-ttl: ${EMAIL_VERIFICATION_TOKEN_TTL:PT24H}
+    password-reset:
+      token-ttl: ${PASSWORD_RESET_TOKEN_TTL:PT30M}
     rate-limit:
       enabled: true
       login:
@@ -53,6 +55,9 @@ app:
       email-resend:
         capacity: ${EMAIL_RESEND_RATE_LIMIT_CAPACITY:3}
         window: ${EMAIL_RESEND_RATE_LIMIT_WINDOW:1h}
+      password-forgot:
+        capacity: ${PASSWORD_FORGOT_RATE_LIMIT_CAPACITY:3}
+        window: ${PASSWORD_FORGOT_RATE_LIMIT_WINDOW:1h}
   mail:
     from: ${MAIL_FROM}
 
