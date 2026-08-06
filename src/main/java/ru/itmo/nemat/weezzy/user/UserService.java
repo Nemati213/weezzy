@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -40,6 +41,11 @@ public class UserService {
 		String normalizedEmail = normalizeEmail(email);
 		return userRepository.findByEmailIgnoreCase(normalizedEmail)
 				.orElseThrow(() -> new UserNotFoundException(normalizedEmail));
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<User> findOptionalByEmail(String email) {
+		return userRepository.findByEmailIgnoreCase(normalizeEmail(email));
 	}
 
 	@Transactional(readOnly = true)

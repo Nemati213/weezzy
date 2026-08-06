@@ -43,6 +43,8 @@ public class User {
 	@Column(nullable = false, updatable = false)
 	private LocalDateTime createdAt;
 
+	private LocalDateTime emailVerifiedAt;
+
 	@PrePersist
 	void onCreate() {
 		createdAt = LocalDateTime.now();
