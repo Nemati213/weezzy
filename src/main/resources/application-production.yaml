@@ -15,15 +15,33 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+  mail:
+    host: ${MAIL_HOST}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      "[mail.smtp.auth]": true
+      "[mail.smtp.starttls.enable]": true
+      "[mail.smtp.connectiontimeout]": 5000
+      "[mail.smtp.timeout]": 5000
+      "[mail.smtp.writetimeout]": 5000
 
 server:
   forward-headers-strategy: framework
 
 app:
+  frontend:
+    base-url: ${FRONTEND_BASE_URL}
   security:
     jwt:
       secret: ${JWT_SECRET}
-      access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT1H}
+      access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT15M}
+    session:
+      refresh-token-ttl: ${REFRESH_TOKEN_TTL:P30D}
+      max-ttl: ${AUTH_SESSION_MAX_TTL:P90D}
+    email-verification:
+      token-ttl: ${EMAIL_VERIFICATION_TOKEN_TTL:PT24H}
     rate-limit:
       enabled: true
       login:
@@ -32,6 +50,11 @@ app:
       register:
         capacity: ${REGISTER_RATE_LIMIT_CAPACITY:5}
         window: ${REGISTER_RATE_LIMIT_WINDOW:1h}
+      email-resend:
+        capacity: ${EMAIL_RESEND_RATE_LIMIT_CAPACITY:3}
+        window: ${EMAIL_RESEND_RATE_LIMIT_WINDOW:1h}
+  mail:
+    from: ${MAIL_FROM}
 
 management:
   health:

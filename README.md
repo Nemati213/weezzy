@@ -13,7 +13,10 @@ Weezzy — backend внутреннего ITMO-сервиса для нетво�
 ## Что реализовано
 
 - регистрация и вход по email/password;
-- stateless JWT-аутентификация и роли `USER`/`ADMIN`;
+- обязательное подтверждение email, повторная отправка и SMTP в production;
+- короткоживущие access JWT, refresh token rotation и сессии устройств;
+- logout одной сессии и отзыв всех сессий пользователя;
+- роли `USER`/`ADMIN`;
 - единый JSON-формат API-ошибок, включая `401`, `403` и request ID;
 - Redis rate limit для login/register в production;
 - onboarding с прогрессом, недостающими шагами и проверкой готовности к активации;
@@ -115,16 +118,27 @@ DB_USERNAME
 DB_PASSWORD
 REDIS_URL
 JWT_SECRET
+FRONTEND_BASE_URL
+MAIL_HOST
+MAIL_USERNAME
+MAIL_PASSWORD
+MAIL_FROM
 ```
 
 Опциональные variables:
 
 ```text
-JWT_ACCESS_TOKEN_TTL=PT1H
+JWT_ACCESS_TOKEN_TTL=PT15M
+REFRESH_TOKEN_TTL=P30D
+AUTH_SESSION_MAX_TTL=P90D
 LOGIN_RATE_LIMIT_CAPACITY=10
 LOGIN_RATE_LIMIT_WINDOW=1m
 REGISTER_RATE_LIMIT_CAPACITY=5
 REGISTER_RATE_LIMIT_WINDOW=1h
+EMAIL_VERIFICATION_TOKEN_TTL=PT24H
+EMAIL_RESEND_RATE_LIMIT_CAPACITY=3
+EMAIL_RESEND_RATE_LIMIT_WINDOW=1h
+MAIL_PORT=587
 WEEZZY_VERSION=<release-version>
 ```
 
@@ -137,6 +151,9 @@ Production profile не содержит fallback-значений для БД, 
 
 - `POST /api/auth/register`;
 - `POST /api/auth/login`;
+- `POST /api/auth/refresh`;
+- `POST /api/auth/email/verify`;
+- `POST /api/auth/email/resend`;
 - `/v3/api-docs/**`;
 - `/swagger-ui/**`;
 - `/actuator/health` и `/actuator/health/**`.
@@ -146,6 +163,13 @@ Production profile не содержит fallback-значений для БД, 
 ```http
 Authorization: Bearer <accessToken>
 ```
+
+Register создаёт неподтверждённого пользователя и отправляет ссылку подтверждения.
+До подтверждения login возвращает `403 Forbidden`. После подтверждения login
+возвращает access token вместе с одноразовым refresh token.
+Access token по умолчанию действует 15 минут. Вызов `/api/auth/refresh` заменяет
+refresh token новым; повторное использование уже заменённого токена отзывает всю
+сессию устройства. В базе хранится только SHA-256 hash секрета refresh token.
 
 В production login и register ограничиваются по IP и операции. При исчерпании
 лимита API возвращает `429 Too Many Requests`, `Retry-After`,
@@ -163,8 +187,13 @@ structured logs и тело API-ошибки.
 
 | Метод | Endpoint | Назначение |
 |---|---|---|
-| `POST` | `/api/auth/register` | Регистрация и получение JWT |
+| `POST` | `/api/auth/register` | Регистрация и отправка письма подтверждения |
 | `POST` | `/api/auth/login` | Вход и получение JWT |
+| `POST` | `/api/auth/refresh` | Rotation refresh token и новая пара токенов |
+| `POST` | `/api/auth/email/verify` | Подтверждение email одноразовым токеном |
+| `POST` | `/api/auth/email/resend` | Повторная отправка письма подтверждения |
+| `POST` | `/api/auth/logout` | Отзыв текущей сессии |
+| `POST` | `/api/auth/logout-all` | Отзыв всех сессий пользователя |
 | `GET` | `/api/auth/me` | Текущий пользователь |
 | `GET` | `/api/onboarding/me` | Прогресс и недостающие шаги onboarding |
 
@@ -426,8 +455,7 @@ authenticated principal, бизнес-логика находится в service
 
 ## Ближайший roadmap
 
-- refresh tokens, rotation, logout и отзыв сессий;
-- подтверждение email и восстановление пароля;
+- восстановление пароля;
 - фотографии профиля через S3-compatible object storage;
 - reports, moderation и блокировка аккаунтов;
 - notifications и transactional outbox;

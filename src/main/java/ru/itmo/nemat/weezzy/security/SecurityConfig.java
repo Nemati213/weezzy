@@ -30,7 +30,13 @@ public class SecurityConfig {
 						.authenticationEntryPoint(authenticationEntryPoint)
 						.accessDeniedHandler(accessDeniedHandler))
 				.authorizeHttpRequests(auth -> auth
-						.requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
+						.requestMatchers(
+								"/api/auth/register",
+								"/api/auth/login",
+								"/api/auth/refresh",
+								"/api/auth/email/verify",
+								"/api/auth/email/resend"
+						).permitAll()
 						.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
 						.requestMatchers("/api/admin/**").hasRole("ADMIN")
 						.requestMatchers(

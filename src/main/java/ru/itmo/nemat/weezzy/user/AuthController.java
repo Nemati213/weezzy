@@ -1,7 +1,9 @@
 package ru.itmo.nemat.weezzy.user;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -11,39 +13,89 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import ru.itmo.nemat.weezzy.security.JwtAuthenticatedUser;
-import ru.itmo.nemat.weezzy.security.JwtService;
 import ru.itmo.nemat.weezzy.user.dto.AuthTokenResponse;
 import ru.itmo.nemat.weezzy.user.dto.AuthUserResponse;
 import ru.itmo.nemat.weezzy.user.dto.LoginRequest;
+import ru.itmo.nemat.weezzy.user.dto.RefreshTokenRequest;
 import ru.itmo.nemat.weezzy.user.dto.RegisterRequest;
+import ru.itmo.nemat.weezzy.user.dto.RegistrationResponse;
+import ru.itmo.nemat.weezzy.user.dto.ResendEmailVerificationRequest;
+import ru.itmo.nemat.weezzy.user.dto.VerifyEmailRequest;
 
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
+	private final AuthService authService;
 	private final UserService userService;
-	private final JwtService jwtService;
 
 	@PostMapping("/register")
-	public ResponseEntity<AuthTokenResponse> register(@Valid @RequestBody RegisterRequest request) {
-		User user = userService.register(request.email(), request.password());
-
-		return ResponseEntity
-				.status(HttpStatus.CREATED)
-				.body(AuthTokenResponse.bearer(jwtService.generateAccessToken(user), user));
+	public ResponseEntity<RegistrationResponse> register(
+			@Valid @RequestBody RegisterRequest request
+	) {
+		return ResponseEntity.status(HttpStatus.CREATED).body(
+				authService.register(request.email(), request.password())
+		);
 	}
 
 	@PostMapping("/login")
-	public ResponseEntity<AuthTokenResponse> login(@Valid @RequestBody LoginRequest request) {
-		User user = userService.authenticate(request.email(), request.password());
+	public ResponseEntity<AuthTokenResponse> login(
+			@Valid @RequestBody LoginRequest request,
+			HttpServletRequest httpRequest
+	) {
+		return ResponseEntity.ok(authService.login(
+				request.email(),
+				request.password(),
+				httpRequest.getHeader(HttpHeaders.USER_AGENT),
+				httpRequest.getRemoteAddr()
+		));
+	}
 
-		return ResponseEntity.ok(AuthTokenResponse.bearer(jwtService.generateAccessToken(user), user));
+	@PostMapping("/refresh")
+	public ResponseEntity<AuthTokenResponse> refresh(
+			@Valid @RequestBody RefreshTokenRequest request
+	) {
+		return ResponseEntity.ok(authService.refresh(request.refreshToken()));
+	}
+
+	@PostMapping("/email/verify")
+	public ResponseEntity<Void> verifyEmail(
+			@Valid @RequestBody VerifyEmailRequest request
+	) {
+		authService.verifyEmail(request.token());
+		return ResponseEntity.noContent().build();
+	}
+
+	@PostMapping("/email/resend")
+	public ResponseEntity<Void> resendEmailVerification(
+			@Valid @RequestBody ResendEmailVerificationRequest request
+	) {
+		authService.resendEmailVerification(request.email());
+		return ResponseEntity.accepted().build();
+	}
+
+	@PostMapping("/logout")
+	public ResponseEntity<Void> logout(
+			@Valid @RequestBody RefreshTokenRequest request,
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser
+	) {
+		authService.logout(request.refreshToken(), authenticatedUser.id());
+		return ResponseEntity.noContent().build();
+	}
+
+	@PostMapping("/logout-all")
+	public ResponseEntity<Void> logoutAll(
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser
+	) {
+		authService.logoutAll(authenticatedUser.id());
+		return ResponseEntity.noContent().build();
 	}
 
 	@GetMapping("/me")
-	public ResponseEntity<AuthUserResponse> me(@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser) {
+	public ResponseEntity<AuthUserResponse> me(
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser
+	) {
 		User user = userService.findById(authenticatedUser.id());
-
 		return ResponseEntity.ok(AuthUserResponse.from(user));
 	}
 }

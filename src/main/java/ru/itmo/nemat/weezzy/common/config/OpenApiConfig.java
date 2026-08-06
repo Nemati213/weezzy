@@ -16,7 +16,10 @@ public class OpenApiConfig {
 	private static final String BEARER_AUTH = "bearerAuth";
 	private static final Set<String> PUBLIC_PATHS = Set.of(
 			"/api/auth/register",
-			"/api/auth/login"
+			"/api/auth/login",
+			"/api/auth/refresh",
+			"/api/auth/email/verify",
+			"/api/auth/email/resend"
 	);
 
 	@Bean

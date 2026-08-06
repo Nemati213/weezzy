@@ -9,13 +9,30 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import ru.itmo.nemat.weezzy.common.exception.BadRequestException;
 import ru.itmo.nemat.weezzy.common.exception.ConflictException;
+import ru.itmo.nemat.weezzy.common.exception.ForbiddenException;
 import ru.itmo.nemat.weezzy.common.exception.NotFoundException;
+import ru.itmo.nemat.weezzy.common.exception.UnauthorizedException;
 import ru.itmo.nemat.weezzy.common.observability.RequestCorrelationFilter;
 
 import java.time.LocalDateTime;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+	@ExceptionHandler(ForbiddenException.class)
+	public ResponseEntity<ApiErrorResponse> handleForbidden(
+			ForbiddenException exception,
+			HttpServletRequest request
+	) {
+		return buildResponse(HttpStatus.FORBIDDEN, exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(UnauthorizedException.class)
+	public ResponseEntity<ApiErrorResponse> handleUnauthorized(
+			UnauthorizedException exception,
+			HttpServletRequest request
+	) {
+		return buildResponse(HttpStatus.UNAUTHORIZED, exception.getMessage(), request);
+	}
 
 	@ExceptionHandler(NotFoundException.class)
 	public ResponseEntity<ApiErrorResponse> handleNotFound(NotFoundException exception, HttpServletRequest request) {

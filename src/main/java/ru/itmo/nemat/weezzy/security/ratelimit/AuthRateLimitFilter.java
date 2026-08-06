@@ -27,6 +27,7 @@ import java.time.Duration;
 public class AuthRateLimitFilter extends OncePerRequestFilter {
 	private static final String LOGIN_PATH = "/api/auth/login";
 	private static final String REGISTER_PATH = "/api/auth/register";
+	private static final String EMAIL_RESEND_PATH = "/api/auth/email/resend";
 	private static final String RATE_LIMIT_HEADER = "X-RateLimit-Limit";
 	private static final String RATE_LIMIT_REMAINING_HEADER = "X-RateLimit-Remaining";
 	private static final Logger log = LoggerFactory.getLogger(AuthRateLimitFilter.class);
@@ -43,7 +44,9 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
 		}
 
 		String path = resolveRequestPath(request);
-		return !LOGIN_PATH.equals(path) && !REGISTER_PATH.equals(path);
+		return !LOGIN_PATH.equals(path)
+				&& !REGISTER_PATH.equals(path)
+				&& !EMAIL_RESEND_PATH.equals(path);
 	}
 
 	@Override
@@ -89,7 +92,10 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
 	}
 
 	private String resolveOperation(String path) {
-		return LOGIN_PATH.equals(path) ? "login" : "register";
+		if (LOGIN_PATH.equals(path)) {
+			return "login";
+		}
+		return REGISTER_PATH.equals(path) ? "register" : "email_resend";
 	}
 
 	private String resolveRequestPath(HttpServletRequest request) {
@@ -103,7 +109,14 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
 	}
 
 	private AuthRateLimitProperties.Policy resolvePolicy(String operation) {
-		return "login".equals(operation) ? properties.login() : properties.register();
+		return switch (operation) {
+			case "login" -> properties.login();
+			case "register" -> properties.register();
+			case "email_resend" -> properties.emailResend();
+			default -> throw new IllegalArgumentException(
+					"Unsupported rate limit operation: " + operation
+			);
+		};
 	}
 
 	private String resolveClientAddress(HttpServletRequest request) {

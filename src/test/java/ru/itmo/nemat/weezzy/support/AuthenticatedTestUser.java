@@ -8,6 +8,7 @@ import ru.itmo.nemat.weezzy.security.JwtService;
 import ru.itmo.nemat.weezzy.user.User;
 import ru.itmo.nemat.weezzy.user.UserRepository;
 import ru.itmo.nemat.weezzy.user.UserRole;
+import ru.itmo.nemat.weezzy.user.emailverification.LocalEmailVerificationSender;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -20,7 +21,7 @@ public record AuthenticatedTestUser(MockMvc mockMvc, String token, String userId
 
 	public static AuthenticatedTestUser register(MockMvc mockMvc, ObjectMapper objectMapper) throws Exception {
 		String email = "test-" + UUID.randomUUID() + "@itmo.ru";
-		String response = mockMvc.perform(post("/api/auth/register")
+		mockMvc.perform(post("/api/auth/register")
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -28,7 +29,26 @@ public record AuthenticatedTestUser(MockMvc mockMvc, String token, String userId
 								  "password": "password123"
 								}
 								""".formatted(email)))
-				.andExpect(status().isCreated())
+				.andExpect(status().isCreated());
+		String verificationToken = LocalEmailVerificationSender.takeToken(email)
+				.orElseThrow(() -> new IllegalStateException(
+						"No local verification token was sent to " + email
+				));
+		mockMvc.perform(post("/api/auth/email/verify")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(
+								java.util.Map.of("token", verificationToken)
+						)))
+				.andExpect(status().isNoContent());
+		String response = mockMvc.perform(post("/api/auth/login")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "email": "%s",
+								  "password": "password123"
+								}
+								""".formatted(email)))
+				.andExpect(status().isOk())
 				.andReturn()
 				.getResponse()
 				.getContentAsString();

@@ -14,7 +14,8 @@ import java.time.Duration;
 public record AuthRateLimitProperties(
 		boolean enabled,
 		@Valid @NotNull Policy login,
-		@Valid @NotNull Policy register
+		@Valid @NotNull Policy register,
+		@Valid @NotNull Policy emailResend
 ) {
 	public record Policy(
 			@Min(1) int capacity,

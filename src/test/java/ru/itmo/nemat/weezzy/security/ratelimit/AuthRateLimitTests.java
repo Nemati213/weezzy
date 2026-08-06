@@ -36,7 +36,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 		"app.security.rate-limit.login.capacity=2",
 		"app.security.rate-limit.login.window=1m",
 		"app.security.rate-limit.register.capacity=1",
-		"app.security.rate-limit.register.window=1m"
+		"app.security.rate-limit.register.window=1m",
+		"app.security.rate-limit.email-resend.capacity=1",
+		"app.security.rate-limit.email-resend.window=1m"
 })
 @AutoConfigureMockMvc
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
@@ -108,6 +110,18 @@ class AuthRateLimitTests {
 	}
 
 	@Test
+	void emailVerificationResendIsRateLimited() throws Exception {
+		String clientAddress = "198.51.100.30";
+
+		resendEmailVerification(clientAddress)
+				.andExpect(status().isAccepted())
+				.andExpect(header().string("X-RateLimit-Remaining", "0"));
+		resendEmailVerification(clientAddress)
+				.andExpect(status().isTooManyRequests())
+				.andExpect(jsonPath("$.path").value("/api/auth/email/resend"));
+	}
+
+	@Test
 	void redisScriptEnforcesCapacityAtomically() throws Exception {
 		ExecutorService executor = Executors.newFixedThreadPool(12);
 		try {
@@ -165,6 +179,17 @@ class AuthRateLimitTests {
 						  "password": "password123"
 						}
 						""".formatted(email)));
+	}
+
+	private ResultActions resendEmailVerification(String clientAddress) throws Exception {
+		return mockMvc.perform(post("/api/auth/email/resend")
+				.with(from(clientAddress))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "email": "missing-resend-rate-user@itmo.ru"
+						}
+						"""));
 	}
 
 	private RequestPostProcessor from(String clientAddress) {
