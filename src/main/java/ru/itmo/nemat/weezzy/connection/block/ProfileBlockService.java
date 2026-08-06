@@ -37,6 +37,8 @@ public class ProfileBlockService {
 			throw new SelfBlockException(blockerProfileId);
 		}
 		pairLockService.lock(blockerProfileId, blockedProfileId);
+		profileService.ensureActive(blockerProfileId);
+		profileService.ensureActive(blockedProfileId);
 		Profile blockedProfile = profileService.findById(blockedProfileId);
 
 		ProfileBlockId blockId = new ProfileBlockId(blockerProfileId, blockedProfileId);
@@ -98,6 +100,8 @@ public class ProfileBlockService {
 			return;
 		}
 		pairLockService.lock(blockerProfileId, blockedProfileId);
+		profileService.ensureActive(blockerProfileId);
+		profileService.ensureActive(blockedProfileId);
 		ProfileBlockId blockId = new ProfileBlockId(blockerProfileId, blockedProfileId);
 		if (repository.existsById(blockId)) {
 			repository.deleteById(blockId);
@@ -116,6 +120,8 @@ public class ProfileBlockService {
 
 	@Transactional(readOnly = true)
 	public void ensureInteractionAllowed(UUID firstProfileId, UUID secondProfileId) {
+		profileService.ensureActive(firstProfileId);
+		profileService.ensureActive(secondProfileId);
 		if (isBlockedBetween(firstProfileId, secondProfileId)) {
 			throw new ProfileInteractionBlockedException(firstProfileId, secondProfileId);
 		}

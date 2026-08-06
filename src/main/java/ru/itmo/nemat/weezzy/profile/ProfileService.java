@@ -86,12 +86,20 @@ public class ProfileService {
 
 	@Transactional(readOnly = true)
 	public List<Profile> findAll() {
-		return profileRepository.findAll();
+		return profileRepository.findAllByStatusNot(ProfileStatus.DELETED);
 	}
 
 	@Transactional(readOnly = true)
 	public Page<Profile> findAll(Pageable pageable) {
-		return profileRepository.findAll(pageable);
+		return profileRepository.findAllByStatusNot(ProfileStatus.DELETED, pageable);
+	}
+
+	@Transactional(readOnly = true)
+	public void ensureActive(UUID profileId) {
+		Profile profile = findById(profileId);
+		if (profile.getStatus() == ProfileStatus.DELETED) {
+			throw new DeletedProfileInteractionException(profileId);
+		}
 	}
 
 	@Transactional
@@ -112,6 +120,9 @@ public class ProfileService {
 	}
 
 	private void applyUpdate(Profile profile, UpdateProfileRequest request) {
+		if (request.status() == ProfileStatus.DELETED) {
+			throw new DeletedProfileInteractionException(profile.getId());
+		}
 		if (request.displayName() != null) {
 			profile.setDisplayName(request.displayName());
 		}

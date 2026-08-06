@@ -50,6 +50,8 @@ public class Profile {
 	@Column(nullable = false)
 	private LocalDateTime updatedAt;
 
+	private LocalDateTime deletedAt;
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 20)
 	private ProfileStatus status = ProfileStatus.DRAFT;

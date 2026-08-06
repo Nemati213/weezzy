@@ -141,6 +141,8 @@ public class ProfileMatchService {
 		}
 
 		pairLockService.lock(sourceProfileId, matchedProfileId);
+		profileService.ensureActive(sourceProfileId);
+		profileService.ensureActive(matchedProfileId);
 		ProfileMatchId matchId = normalizedId(sourceProfileId, matchedProfileId);
 		if (!repository.existsById(matchId)) {
 			throw new MatchNotFoundException(sourceProfileId, matchedProfileId);

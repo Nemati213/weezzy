@@ -11,15 +11,21 @@ public record VoteResponse(
 		UUID targetProfileId,
 		ProfileVoteAction action,
 		LocalDateTime createdAt,
-		LocalDateTime updatedAt
+		LocalDateTime updatedAt,
+		boolean targetDeleted
 ) {
 	public static VoteResponse from(ProfileVote profileVote) {
+		return from(profileVote, false);
+	}
+
+	public static VoteResponse from(ProfileVote profileVote, boolean targetDeleted) {
 		return new VoteResponse(
 				profileVote.getSourceProfileId(),
 				profileVote.getTargetProfileId(),
 				profileVote.getAction(),
 				profileVote.getCreatedAt(),
-				profileVote.getUpdatedAt()
+				profileVote.getUpdatedAt(),
+				targetDeleted
 		);
 	}
 }

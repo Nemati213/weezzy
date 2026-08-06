@@ -1,6 +1,8 @@
 package ru.itmo.nemat.weezzy.profile;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -12,6 +14,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface ProfileRepository extends JpaRepository<Profile, UUID> {
+	List<Profile> findAllByStatusNot(ProfileStatus status);
+
+	Page<Profile> findAllByStatusNot(ProfileStatus status, Pageable pageable);
+
 	boolean existsByUserId(UUID userId);
 	Optional<Profile> findByUserId(UUID userId);
 

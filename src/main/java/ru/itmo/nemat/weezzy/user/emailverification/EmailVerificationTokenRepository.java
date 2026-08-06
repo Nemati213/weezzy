@@ -12,6 +12,8 @@ import java.util.UUID;
 public interface EmailVerificationTokenRepository
 		extends JpaRepository<EmailVerificationToken, UUID> {
 
+	boolean existsByUserId(UUID userId);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("""
 			SELECT token

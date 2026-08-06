@@ -482,6 +482,9 @@ class AuthControllerTests {
 				.andExpect(jsonPath(
 						"$.paths['/api/recommendations'].get.security[0].bearerAuth"
 				).isArray())
+				.andExpect(jsonPath(
+						"$.paths['/api/users/me'].delete.security[0].bearerAuth"
+				).isArray())
 				.andExpect(jsonPath("$.paths['/api/recommendations']").exists());
 	}
 

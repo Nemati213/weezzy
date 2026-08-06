@@ -19,37 +19,32 @@ public record ProfileResponse(
 		LocalDateTime createdAt,
 		LocalDateTime updatedAt,
 		ProfileStatus status,
-		UUID userId
+		UUID userId,
+		boolean deleted
 ) {
 	public static ProfileResponse from(Profile profile) {
-		return new ProfileResponse(
-				profile.getId(),
-				profile.getDisplayName(),
-				profile.getBio(),
-				null,
-				profile.getFaculty(),
-				profile.getStudyProgram(),
-				profile.getCourse(),
-				profile.getCreatedAt(),
-				profile.getUpdatedAt(),
-				profile.getStatus(),
-				profile.getUser() == null ? null : profile.getUser().getId()
-		);
+		return toResponse(profile, false);
 	}
 
 	public static ProfileResponse withContact(Profile profile) {
+		return toResponse(profile, true);
+	}
+
+	private static ProfileResponse toResponse(Profile profile, boolean includeContact) {
+		boolean deleted = profile.getStatus() == ProfileStatus.DELETED;
 		return new ProfileResponse(
 				profile.getId(),
 				profile.getDisplayName(),
 				profile.getBio(),
-				profile.getTelegram(),
+				includeContact && !deleted ? profile.getTelegram() : null,
 				profile.getFaculty(),
 				profile.getStudyProgram(),
 				profile.getCourse(),
 				profile.getCreatedAt(),
 				profile.getUpdatedAt(),
 				profile.getStatus(),
-				profile.getUser() == null ? null : profile.getUser().getId()
+				profile.getUser() == null ? null : profile.getUser().getId(),
+				deleted
 		);
 	}
 }

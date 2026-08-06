@@ -13,6 +13,8 @@ public interface ProfileSkillRepository extends JpaRepository<ProfileSkill, Prof
 
 	void deleteByProfileIdAndSkillId(UUID profileId, UUID skillId);
 
+	void deleteAllByProfileId(UUID profileId);
+
 	List<ProfileSkill> findAllByProfileIdIn(Collection<UUID> profileIds);
 
 	boolean existsByProfileId(UUID profileId);

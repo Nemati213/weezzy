@@ -12,6 +12,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import ru.itmo.nemat.weezzy.user.UserRepository;
 
 import java.io.IOException;
 import java.util.List;
@@ -22,6 +23,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 	private static final String BEARER_PREFIX = "Bearer ";
 
 	private final JwtService jwtService;
+	private final UserRepository userRepository;
 
 	@Override
 	protected void doFilterInternal(
@@ -35,20 +37,26 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 				&& authorizationHeader.startsWith(BEARER_PREFIX)
 				&& SecurityContextHolder.getContext().getAuthentication() == null) {
 			String token = authorizationHeader.substring(BEARER_PREFIX.length());
-			jwtService.parseToken(token).ifPresent(user -> {
-				List<SimpleGrantedAuthority> authorities = List.of(
-						new SimpleGrantedAuthority("ROLE_" + user.role().name())
-				);
-				UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-						user,
-						null,
-						authorities
-				);
-				authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-				SecurityContextHolder.getContext().setAuthentication(authentication);
-			});
+			jwtService.parseToken(token)
+					.filter(user -> userRepository.existsById(user.id()))
+					.ifPresent(user -> authenticate(request, user));
 		}
 
 		filterChain.doFilter(request, response);
+	}
+
+	private void authenticate(
+			HttpServletRequest request,
+			JwtAuthenticatedUser user
+	) {
+		List<SimpleGrantedAuthority> authorities = List.of(
+				new SimpleGrantedAuthority("ROLE_" + user.role().name())
+		);
+		UsernamePasswordAuthenticationToken authentication =
+				new UsernamePasswordAuthenticationToken(user, null, authorities);
+		authentication.setDetails(
+				new WebAuthenticationDetailsSource().buildDetails(request)
+		);
+		SecurityContextHolder.getContext().setAuthentication(authentication);
 	}
 }

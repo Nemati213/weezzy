@@ -10,8 +10,10 @@ import ru.itmo.nemat.weezzy.connection.block.ProfileBlockService;
 import ru.itmo.nemat.weezzy.connection.event.ProfileInteractionEventService;
 import ru.itmo.nemat.weezzy.connection.event.ProfileInteractionEventType;
 import ru.itmo.nemat.weezzy.connection.match.ProfileMatchService;
-import ru.itmo.nemat.weezzy.profile.ProfileService;
 import ru.itmo.nemat.weezzy.connection.vote.dto.VoteResponse;
+import ru.itmo.nemat.weezzy.profile.Profile;
+import ru.itmo.nemat.weezzy.profile.ProfileService;
+import ru.itmo.nemat.weezzy.profile.ProfileStatus;
 
 import java.util.List;
 import java.util.Set;
@@ -30,7 +32,11 @@ public class ProfileVoteService {
 	private final ProfileInteractionEventService interactionEventService;
 
 	@Transactional
-	public ProfileVote vote(UUID sourceProfileId, UUID targetProfileId, ProfileVoteAction action) {
+	public ProfileVote vote(
+			UUID sourceProfileId,
+			UUID targetProfileId,
+			ProfileVoteAction action
+	) {
 		if (sourceProfileId.equals(targetProfileId)) {
 			throw new SelfVoteException(sourceProfileId);
 		}
@@ -99,12 +105,18 @@ public class ProfileVoteService {
 		List<ProfileVote> page = fetched.stream()
 				.limit(limit)
 				.toList();
+		Set<UUID> deletedTargetIds = findDeletedTargetIds(page);
 		String nextCursor = hasNext
 				? cursorCodec.encode(toCursor(page.getLast()))
 				: null;
 
 		return new CursorPageResponse<>(
-				page.stream().map(VoteResponse::from).toList(),
+				page.stream()
+						.map(vote -> VoteResponse.from(
+								vote,
+								deletedTargetIds.contains(vote.getTargetProfileId())
+						))
+						.toList(),
 				nextCursor
 		);
 	}
@@ -120,5 +132,15 @@ public class ProfileVoteService {
 
 	private VoteCursor toCursor(ProfileVote vote) {
 		return new VoteCursor(vote.getCreatedAt(), vote.getTargetProfileId());
+	}
+
+	private Set<UUID> findDeletedTargetIds(List<ProfileVote> votes) {
+		Set<UUID> targetIds = votes.stream()
+				.map(ProfileVote::getTargetProfileId)
+				.collect(Collectors.toSet());
+		return profileService.findAllByIds(targetIds).stream()
+				.filter(profile -> profile.getStatus() == ProfileStatus.DELETED)
+				.map(Profile::getId)
+				.collect(Collectors.toSet());
 	}
 }

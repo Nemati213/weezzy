@@ -7,6 +7,11 @@ import java.util.UUID;
 
 public interface ProfileInteractionEventRepository
 		extends JpaRepository<ProfileInteractionEvent, UUID> {
+	void deleteAllBySourceProfileIdOrTargetProfileId(
+			UUID sourceProfileId,
+			UUID targetProfileId
+	);
+
 	List<ProfileInteractionEvent> findAllBySourceProfileIdOrderByOccurredAtAscIdAsc(
 			UUID sourceProfileId
 	);

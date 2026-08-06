@@ -9,6 +9,8 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 public interface AuthSessionRepository extends JpaRepository<AuthSession, UUID> {
+	boolean existsByUserId(UUID userId);
+
 	@Modifying
 	@Query("""
 			UPDATE AuthSession session

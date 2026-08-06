@@ -10,6 +10,10 @@ import java.util.UUID;
 
 public interface ProfileRecommendationImpressionRepository
 		extends JpaRepository<ProfileRecommendationImpression, ProfileRecommendationImpressionId> {
+	void deleteAllBySourceProfileIdOrTargetProfileId(
+			UUID sourceProfileId,
+			UUID targetProfileId
+	);
 
 	@Modifying
 	@Query(value = """

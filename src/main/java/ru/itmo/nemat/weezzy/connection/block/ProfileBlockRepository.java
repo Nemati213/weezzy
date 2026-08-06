@@ -10,6 +10,11 @@ import java.util.List;
 import java.util.UUID;
 
 public interface ProfileBlockRepository extends JpaRepository<ProfileBlock, ProfileBlockId> {
+	void deleteAllByBlockerProfileIdOrBlockedProfileId(
+			UUID blockerProfileId,
+			UUID blockedProfileId
+	);
+
 	List<ProfileBlock> findByBlockerProfileIdOrderByCreatedAtDesc(UUID profileId);
 
 	@Query("""
