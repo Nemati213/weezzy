@@ -64,6 +64,10 @@ public class JwtService {
 		return signingInput + "." + sign(signingInput);
 	}
 
+	public long getAccessTokenTtlSeconds() {
+		return accessTokenTtl.toSeconds();
+	}
+
 	public Optional<JwtAuthenticatedUser> parseToken(String token) {
 		String[] parts = token.split("\\.");
 		if (parts.length != 3 || !isSignatureValid(parts)) {
