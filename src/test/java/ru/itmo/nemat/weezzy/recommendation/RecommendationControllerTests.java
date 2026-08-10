@@ -30,6 +30,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static ru.itmo.nemat.weezzy.support.ProfilePhotoTestData.insertReadyPhoto;
 
 @Testcontainers
 @SpringBootTest
@@ -108,6 +109,10 @@ class RecommendationControllerTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.content[0].profile.displayName").value("Recommendation Alice"))
 				.andExpect(jsonPath("$.content[0].profile.telegram").doesNotExist())
+				.andExpect(jsonPath("$.content[0].profile.photos.length()").value(1))
+				.andExpect(jsonPath("$.content[0].profile.photos[0].downloadUrl")
+						.isNotEmpty())
+				.andExpect(jsonPath("$.content[0].profile.photos[0].avatar").value(true))
 				.andExpect(jsonPath("$.content[0].score").value(7))
 				.andExpect(jsonPath("$.content[0].reason.scoreBreakdown.skills").value(3))
 				.andExpect(jsonPath("$.content[0].reason.scoreBreakdown.interests").value(4))
@@ -571,6 +576,7 @@ class RecommendationControllerTests {
 
 	private void activateProfile(TestProfile profile) throws Exception {
 		completeOnboardingSignals(profile);
+		insertReadyPhoto(jdbcTemplate, UUID.fromString(profile.id()));
 		updateProfileStatus(profile, "ACTIVE");
 	}
 
@@ -592,6 +598,7 @@ class RecommendationControllerTests {
 			int course
 	) throws Exception {
 		completeOnboardingSignals(profile);
+		insertReadyPhoto(jdbcTemplate, UUID.fromString(profile.id()));
 		mockMvc.perform(profile.owner().authorize(patch("/api/profiles/me"))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""

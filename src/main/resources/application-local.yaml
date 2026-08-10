@@ -22,3 +22,7 @@ app:
     bucket: ${S3_BUCKET:weezzy-profile-photos}
     upload-url-ttl: ${S3_UPLOAD_URL_TTL:PT15M}
     download-url-ttl: ${S3_DOWNLOAD_URL_TTL:PT1H}
+    connect-timeout: ${S3_CONNECT_TIMEOUT:PT2S}
+    socket-timeout: ${S3_SOCKET_TIMEOUT:PT5S}
+    api-call-attempt-timeout: ${S3_API_CALL_ATTEMPT_TIMEOUT:PT7S}
+    api-call-timeout: ${S3_API_CALL_TIMEOUT:PT15S}

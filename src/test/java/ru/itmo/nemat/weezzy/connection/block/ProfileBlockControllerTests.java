@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -16,6 +17,8 @@ import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
 import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser.TestProfile;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.UUID;
+
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -23,6 +26,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static ru.itmo.nemat.weezzy.support.ProfilePhotoTestData.insertReadyPhoto;
 
 @Testcontainers
 @SpringBootTest
@@ -45,6 +49,9 @@ class ProfileBlockControllerTests {
 	@Autowired
 	private ObjectMapper objectMapper;
 
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
 		registry.add("spring.datasource.url", postgres::getJdbcUrl);
@@ -56,6 +63,7 @@ class ProfileBlockControllerTests {
 	void blockIsDirectionalAndReturnedOnlyToBlocker() throws Exception {
 		TestProfile blocker = createProfile("Block Direction Blocker");
 		TestProfile blocked = createProfile("Block Direction Blocked");
+		insertReadyPhoto(jdbcTemplate, UUID.fromString(blocked.id()));
 
 		performBlock(blocker, blocked.id())
 				.andExpect(status().isOk())
@@ -63,6 +71,9 @@ class ProfileBlockControllerTests {
 				.andExpect(jsonPath("$.blockedProfile.displayName")
 						.value("Block Direction Blocked"))
 				.andExpect(jsonPath("$.blockedProfile.telegram").doesNotExist())
+				.andExpect(jsonPath("$.blockedProfile.photos.length()").value(1))
+				.andExpect(jsonPath("$.blockedProfile.photos[0].downloadUrl")
+						.isNotEmpty())
 				.andExpect(jsonPath("$.createdAt").isNotEmpty());
 
 		mockMvc.perform(blocker.owner().authorize(get("/api/blocks")))

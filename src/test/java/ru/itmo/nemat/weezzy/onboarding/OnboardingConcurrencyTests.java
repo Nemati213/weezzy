@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -42,6 +43,7 @@ import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static ru.itmo.nemat.weezzy.support.ProfilePhotoTestData.insertReadyPhoto;
 
 @Testcontainers
 @SpringBootTest
@@ -79,6 +81,9 @@ class OnboardingConcurrencyTests {
 
 	@Autowired
 	private PlatformTransactionManager transactionManager;
+
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
 
 	private TransactionTemplate transactionTemplate;
 
@@ -165,6 +170,7 @@ class OnboardingConcurrencyTests {
 		profileSkillService.addSkill(profile.getId(), skill.getId());
 		profileInterestService.addInterest(profile.getId(), interest.getId());
 		profileGoalService.addGoal(profile.getId(), goal.getId());
+		insertReadyPhoto(jdbcTemplate, profile.getId());
 		profileService.update(profile.getId(), statusUpdate(ProfileStatus.HIDDEN));
 
 		return new OnboardingProfile(profile.getId(), skill.getId());

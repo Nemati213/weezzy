@@ -3,6 +3,7 @@ package ru.itmo.nemat.weezzy.profile.photo;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -33,6 +34,11 @@ public interface ProfilePhotoRepository extends JpaRepository<ProfilePhoto, UUID
 
 	List<ProfilePhoto> findAllByProfileIdAndStatusOrderByPositionAsc(
 			UUID profileId,
+			ProfilePhotoStatus status
+	);
+
+	List<ProfilePhoto> findAllByProfileIdInAndStatusOrderByProfileIdAscPositionAsc(
+			Collection<UUID> profileIds,
 			ProfilePhotoStatus status
 	);
 

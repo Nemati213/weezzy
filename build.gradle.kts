@@ -19,6 +19,7 @@ repositories {
 
 dependencies {
 	implementation(platform("software.amazon.awssdk:bom:2.47.3"))
+	implementation("software.amazon.awssdk:apache-client")
 	implementation("software.amazon.awssdk:s3")
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	implementation("org.springframework.boot:spring-boot-starter-data-redis")

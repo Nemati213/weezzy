@@ -165,6 +165,10 @@ MAIL_PORT=587
 S3_REGION=us-east-1
 S3_UPLOAD_URL_TTL=PT15M
 S3_DOWNLOAD_URL_TTL=PT1H
+S3_CONNECT_TIMEOUT=PT2S
+S3_SOCKET_TIMEOUT=PT5S
+S3_API_CALL_ATTEMPT_TIMEOUT=PT7S
+S3_API_CALL_TIMEOUT=PT15S
 PROFILE_PHOTO_MAX_FILE_SIZE=10485760
 PROFILE_PHOTO_MAX_COUNT=6
 PROFILE_PHOTO_PENDING_TTL=P1D
@@ -250,6 +254,7 @@ PROFILE_DETAILS
 SKILLS
 INTERESTS
 GOALS
+PHOTOS
 ACTIVATION
 ```
 
@@ -516,7 +521,5 @@ authenticated principal, бизнес-логика находится в service
 
 ## Ближайший roadmap
 
-- фотографии профиля через S3-compatible object storage;
 - reports, moderation и блокировка аккаунтов;
-- notifications и transactional outbox;
-- Recommendation V3 после накопления реальных interaction events.
+- notifications и transactional outbox.

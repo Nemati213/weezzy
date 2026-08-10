@@ -10,8 +10,10 @@ import ru.itmo.nemat.weezzy.connection.block.ProfileBlockService;
 import ru.itmo.nemat.weezzy.connection.block.ProfileInteractionBlockedException;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
+import ru.itmo.nemat.weezzy.profile.photo.ProfilePhotoService;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -38,6 +40,9 @@ class ProfileMatchServiceTests {
 	@Mock
 	private ProfilePairLockService pairLockService;
 
+	@Mock
+	private ProfilePhotoService profilePhotoService;
+
 	@InjectMocks
 	private ProfileMatchService matchService;
 
@@ -62,6 +67,8 @@ class ProfileMatchServiceTests {
 				.thenReturn(matches);
 		when(profileService.findAllByIds(matchedProfileIds))
 				.thenReturn(List.of(firstMatchedProfile, secondMatchedProfile));
+		when(profilePhotoService.findReadyPhotosByProfileIds(matchedProfileIds))
+				.thenReturn(Map.of());
 
 		var responses = matchService.findAllMatchesByProfileId(sourceProfileId);
 
@@ -73,6 +80,8 @@ class ProfileMatchServiceTests {
 				);
 		verify(profileService, times(1)).findById(sourceProfileId);
 		verify(profileService, times(1)).findAllByIds(matchedProfileIds);
+		verify(profilePhotoService, times(1))
+				.findReadyPhotosByProfileIds(matchedProfileIds);
 	}
 
 	@Test

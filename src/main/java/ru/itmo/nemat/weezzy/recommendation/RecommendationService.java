@@ -14,6 +14,8 @@ import ru.itmo.nemat.weezzy.profile.goal.ProfileGoal;
 import ru.itmo.nemat.weezzy.profile.goal.ProfileGoalRepository;
 import ru.itmo.nemat.weezzy.profile.interest.ProfileInterest;
 import ru.itmo.nemat.weezzy.profile.interest.ProfileInterestRepository;
+import ru.itmo.nemat.weezzy.profile.photo.ProfilePhotoService;
+import ru.itmo.nemat.weezzy.profile.photo.dto.ProfilePhotoResponse;
 import ru.itmo.nemat.weezzy.profile.skill.ProfileSkill;
 import ru.itmo.nemat.weezzy.profile.skill.ProfileSkillRepository;
 import ru.itmo.nemat.weezzy.recommendation.dto.ProfileRecommendationReasonResponse;
@@ -51,6 +53,7 @@ public class RecommendationService {
 	private final RecommendationRankingRepository rankingRepository;
 	private final RecommendationCursorCodec cursorCodec;
 	private final RecommendationProperties properties;
+	private final ProfilePhotoService profilePhotoService;
 
 	@Transactional
 	public RecommendationPageResponse findRecommendations(
@@ -147,6 +150,8 @@ public class RecommendationService {
 				candidateIds,
 				sourceGoalIds
 		);
+		Map<UUID, List<ProfilePhotoResponse>> photosByProfileId =
+				profilePhotoService.findReadyPhotosByProfileIds(candidateIds);
 
 		return rankedProfiles.stream()
 				.map(ranked -> recommendationFor(
@@ -154,7 +159,8 @@ public class RecommendationService {
 						profilesById.get(ranked.profileId()),
 						matchedSkills.getOrDefault(ranked.profileId(), List.of()),
 						matchedInterests.getOrDefault(ranked.profileId(), List.of()),
-						matchedGoals.getOrDefault(ranked.profileId(), List.of())
+						matchedGoals.getOrDefault(ranked.profileId(), List.of()),
+						photosByProfileId.getOrDefault(ranked.profileId(), List.of())
 				))
 				.toList();
 	}
@@ -164,7 +170,8 @@ public class RecommendationService {
 			Profile profile,
 			List<String> matchedSkills,
 			List<String> matchedInterests,
-			List<String> matchedGoals
+			List<String> matchedGoals,
+			List<ProfilePhotoResponse> photos
 	) {
 		RecommendationProperties.Weights weights = properties.weights();
 		ProfileRecommendationReasonResponse reason = new ProfileRecommendationReasonResponse(
@@ -181,7 +188,7 @@ public class RecommendationService {
 		);
 
 		return new ProfileRecommendationResponse(
-				ProfileResponse.from(profile),
+				ProfileResponse.from(profile, photos),
 				ranked.score(),
 				matchedSkills,
 				matchedInterests,

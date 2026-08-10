@@ -14,6 +14,8 @@ import ru.itmo.nemat.weezzy.connection.vote.ProfileVoteAction;
 import ru.itmo.nemat.weezzy.connection.vote.ProfileVoteRepository;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
+import ru.itmo.nemat.weezzy.profile.photo.ProfilePhotoService;
+import ru.itmo.nemat.weezzy.profile.photo.dto.ProfilePhotoResponse;
 
 import java.util.List;
 import java.util.Map;
@@ -32,6 +34,7 @@ public class ProfileMatchService {
 	private final ProfileVoteRepository voteRepository;
 	private final MatchCursorCodec cursorCodec;
 	private final ProfileInteractionEventService interactionEventService;
+	private final ProfilePhotoService profilePhotoService;
 
 	@Transactional
 	public ProfileMatch create(UUID firstProfileId, UUID secondProfileId) {
@@ -107,11 +110,17 @@ public class ProfileMatchService {
 						Profile::getId,
 						Function.identity()
 				));
+		Map<UUID, List<ProfilePhotoResponse>> photosByProfileId =
+				profilePhotoService.findReadyPhotosByProfileIds(matchedProfileIds);
 
 		return matches.stream()
 				.map(profileMatch -> ProfileMatchResponse.from(
 						profileMatch,
-						profilesById.get(otherProfileId(profileId, profileMatch))
+						profilesById.get(otherProfileId(profileId, profileMatch)),
+						photosByProfileId.getOrDefault(
+								otherProfileId(profileId, profileMatch),
+								List.of()
+						)
 				))
 				.toList();
 	}

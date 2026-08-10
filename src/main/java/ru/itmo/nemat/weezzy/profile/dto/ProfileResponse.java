@@ -3,8 +3,10 @@ package ru.itmo.nemat.weezzy.profile.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileStatus;
+import ru.itmo.nemat.weezzy.profile.photo.dto.ProfilePhotoResponse;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 public record ProfileResponse(
@@ -20,17 +22,28 @@ public record ProfileResponse(
 		LocalDateTime updatedAt,
 		ProfileStatus status,
 		UUID userId,
-		boolean deleted
+		boolean deleted,
+		List<ProfilePhotoResponse> photos
 ) {
-	public static ProfileResponse from(Profile profile) {
-		return toResponse(profile, false);
+	public static ProfileResponse from(
+			Profile profile,
+			List<ProfilePhotoResponse> photos
+	) {
+		return toResponse(profile, false, photos);
 	}
 
-	public static ProfileResponse withContact(Profile profile) {
-		return toResponse(profile, true);
+	public static ProfileResponse withContact(
+			Profile profile,
+			List<ProfilePhotoResponse> photos
+	) {
+		return toResponse(profile, true, photos);
 	}
 
-	private static ProfileResponse toResponse(Profile profile, boolean includeContact) {
+	private static ProfileResponse toResponse(
+			Profile profile,
+			boolean includeContact,
+			List<ProfilePhotoResponse> photos
+	) {
 		boolean deleted = profile.getStatus() == ProfileStatus.DELETED;
 		return new ProfileResponse(
 				profile.getId(),
@@ -44,7 +57,8 @@ public record ProfileResponse(
 				profile.getUpdatedAt(),
 				profile.getStatus(),
 				profile.getUser() == null ? null : profile.getUser().getId(),
-				deleted
+				deleted,
+				deleted ? List.of() : List.copyOf(photos)
 		);
 	}
 }

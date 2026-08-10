@@ -10,18 +10,29 @@ Weezzy - backend для внутреннего ITMO-сервиса нетвор�
 Главная бизнес-логика:
 
 - пользователь регистрируется и логинится через email/password;
+- email подтверждается одноразовым токеном; пароль можно восстановить по одноразовой
+  ссылке;
+- access JWT работают вместе с refresh token rotation и серверными сессиями;
 - после регистрации пользователь создает свой профиль;
 - профиль содержит имя, bio, telegram, факультет, образовательную программу, курс и
   статус;
 - профиль может иметь несколько skills, interests и goals;
+- профиль имеет несколько фотографий, одну главную фотографию/avatar и настраиваемый
+  порядок фотографий;
+- файлы фотографий хранятся в S3-compatible object storage, а PostgreSQL хранит
+  только metadata и object key;
 - рекомендации строятся по совпадениям signals: skills, interests, goals;
 - уже проголосованные профили больше не должны появляться в рекомендациях;
 - голосование хранится как один vote на пару `source_profile_id` + `target_profile_id`;
 - повторный vote по той же паре обновляет action;
 - нельзя голосовать за себя;
 - взаимный `LIKE` создает match;
+- onboarding определяет готовность профиля и не позволяет активировать анкету без
+  обязательных данных, signals и хотя бы одной готовой фотографии;
 - пользователи могут предлагать новые skills/interests через suggestions, но они не
   попадают в общий каталог сразу.
+- при удалении аккаунта user и персональные данные удаляются, а обезличенный профиль
+  сохраняется для целостности votes и matches.
 
 Проект сейчас является backend-only приложением. Фронта и мобильного приложения в
 репозитории пока нет.
@@ -41,6 +52,10 @@ Weezzy - backend для внутреннего ITMO-сервиса нетвор�
 - Spring Validation
 - Spring Security
 - JWT access tokens
+- Redis для auth rate limiting
+- Spring Mail для email verification и password reset
+- AWS SDK for Java для S3-compatible object storage
+- MinIO для локального хранения фотографий
 - BCrypt password encoder
 - Lombok
 
@@ -55,13 +70,15 @@ Weezzy - backend для внутреннего ITMO-сервиса нетвор�
 
 Локальная инфраструктура:
 
-- `docker-compose.yml` поднимает PostgreSQL, Redis и pgAdmin;
+- `docker-compose.yml` поднимает PostgreSQL, Redis, pgAdmin и MinIO;
 - PostgreSQL локально доступен на `localhost:5433`;
 - Redis локально доступен на `localhost:6380`;
 - pgAdmin локально доступен на `http://localhost:5050`.
+- MinIO S3 API локально доступен на `http://localhost:9000`;
+- MinIO Console локально доступна на `http://localhost:9001`.
 
-Важно: Redis уже есть в Docker Compose, но бизнес-логика приложения сейчас его почти
-не использует. Не добавлять Redis-зависимости в код без явной задачи.
+Redis используется для rate limiting auth-операций и не является основным хранилищем
+бизнес-данных. Не расширять его использование без явной задачи.
 
 ## 3. Архитектура и структура (Project Structure)
 
@@ -69,7 +86,7 @@ Weezzy - backend для внутреннего ITMO-сервиса нетвор�
 
 - `build.gradle.kts` - зависимости, Java toolchain, настройки тестов;
 - `settings.gradle.kts` - имя Gradle-проекта;
-- `docker-compose.yml` - PostgreSQL, Redis, pgAdmin;
+- `docker-compose.yml` - PostgreSQL, Redis, pgAdmin, MinIO и инициализация bucket;
 - `README.md` - краткие команды запуска;
 - `src/main/resources/application.yaml` - дефолтный профиль и JWT-настройки;
 - `src/main/resources/application-local.yaml` - datasource, Flyway, JPA validate;
@@ -79,9 +96,15 @@ Weezzy - backend для внутреннего ITMO-сервиса нетвор�
 
 Основные Java-пакеты:
 
-- `user` - регистрация, логин, users, roles, auth DTO;
+- `user` - регистрация, логин, users, roles и auth DTO;
+- `user.emailverification`, `user.passwordreset` - подтверждение email и
+  восстановление пароля;
+- `user.accountdeletion` - удаление аккаунта и очистка пользовательских данных;
 - `security` - JWT service, JWT filter, security config, principal;
+- `security.session`, `security.ratelimit` - refresh-сессии и auth rate limiting;
 - `profile` - профили пользователей и user-owned endpoints;
+- `profile.deletion` - анонимизация профиля при удалении аккаунта;
+- `profile.photo` - metadata фотографий, presigned upload/download, avatar и порядок;
 - `profile.skill`, `profile.interest`, `profile.goal` - связи профиля с каталогами;
 - `skill`, `interest`, `goal` - справочники skills/interests/goals;
 - `skill.suggestion`, `interest.suggestion` - пользовательские предложения новых
@@ -89,6 +112,11 @@ Weezzy - backend для внутреннего ITMO-сервиса нетвор�
 - `recommendation` - рекомендательная логика;
 - `connection.vote` - votes между профилями;
 - `connection.match` - matches между профилями;
+- `connection.block` - блокировки между профилями;
+- `connection.event` - история impressions, votes, matches и blocks;
+- `onboarding` - готовность профиля и активация анкеты;
+- `storage` - абстракция object storage и S3-реализация;
+- `common.pagination` - cursor pagination и общие форматы страниц;
 - `common.exception` - базовые exception-типы;
 - `common.error` - единый HTTP error handler.
 
@@ -135,7 +163,8 @@ Spring/JPA rules:
 
 Security rules:
 
-- без JWT доступны только `/api/auth/register` и `/api/auth/login`;
+- без JWT доступны register, login, refresh, подтверждение/повторная отправка email и
+  восстановление пароля; точный список задан в `SecurityConfig`;
 - все остальные endpoints требуют authentication;
 - текущий user берется через `@AuthenticationPrincipal JwtAuthenticatedUser`;
 - user-owned endpoints должны быть вида `/me`, например `/api/profiles/me`;
@@ -192,17 +221,35 @@ docker compose up -d
 
 ## 6. Текущий фокус (Current Roadmap)
 
-### Pagination
+### 1. Reports, moderation и блокировка аккаунтов
 
-- добавить cursor pagination для динамических списков matches и votes;
-- добавить обычную page pagination для profiles и catalogs;
-- использовать единый формат ответа там, где это не ломает существующий API;
-- покрыть границы страниц, сортировку и отсутствие дублей тестами.
+- позволить authenticated user пожаловаться на чужой профиль;
+- поддержать причины жалобы: spam, harassment, inappropriate content, fake profile
+  и other с пользовательским комментарием;
+- запретить жалобы на собственный профиль и повторную открытую жалобу на ту же цель;
+- хранить жизненный цикл жалобы со статусами `PENDING`, `REVIEWED`, `REJECTED` и
+  `RESOLVED`, решением модератора и audit timestamps;
+- добавить admin endpoints для очереди жалоб, фильтрации, просмотра и вынесения
+  решения;
+- поддержать временную приостановку и постоянную блокировку аккаунта с причиной,
+  сроком и автором решения;
+- при санкции отзывать активные auth sessions и запрещать login, refresh и новые
+  взаимодействия заблокированного пользователя;
+- корректно обрабатывать жалобы и audit history после удаления аккаунта или
+  анонимизации профиля;
+- добавить Flyway migrations, индексы, проверки ролей и интеграционные тесты happy
+  path, validation, duplicates, auth и admin access.
 
-### Onboarding
+### 2. Notifications и transactional outbox
 
-- определить минимально заполненный профиль, готовый к рекомендациям;
-- описать шаги: профиль, skills, interests, goals, активация анкеты;
-- возвращать прогресс и список незаполненных шагов для frontend;
-- запретить активацию анкеты, если обязательные шаги не завершены;
-- покрыть переходы между шагами и повторное прохождение тестами.
+- добавить in-app уведомления как минимум для нового match, решения по жалобе и
+  административной санкции;
+- поддержать unread/read state, cursor pagination, отметку одного уведомления и всех
+  уведомлений как прочитанных;
+- записывать outbox event в той же PostgreSQL-транзакции, где произошло бизнес-событие;
+- обрабатывать outbox асинхронным worker с retry, backoff и идемпотентной доставкой;
+- не использовать Redis как основное хранилище уведомлений или outbox;
+- подготовить расширение каналов доставки на email без связывания доменной логики с
+  конкретным sender;
+- добавить метрики pending/failed events, политику очистки обработанных записей и
+  интеграционные тесты транзакционности, повторной обработки и cursor pagination.

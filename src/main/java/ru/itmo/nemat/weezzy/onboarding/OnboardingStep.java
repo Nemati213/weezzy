@@ -5,5 +5,6 @@ public enum OnboardingStep {
 	SKILLS,
 	INTERESTS,
 	GOALS,
+	PHOTOS,
 	ACTIVATION
 }

@@ -12,6 +12,8 @@ import ru.itmo.nemat.weezzy.profile.goal.ProfileGoal;
 import ru.itmo.nemat.weezzy.profile.goal.ProfileGoalRepository;
 import ru.itmo.nemat.weezzy.profile.interest.ProfileInterest;
 import ru.itmo.nemat.weezzy.profile.interest.ProfileInterestRepository;
+import ru.itmo.nemat.weezzy.profile.photo.ProfilePhotoRepository;
+import ru.itmo.nemat.weezzy.profile.photo.ProfilePhotoStatus;
 import ru.itmo.nemat.weezzy.profile.skill.ProfileSkillRepository;
 
 import java.util.ArrayList;
@@ -29,6 +31,7 @@ public class OnboardingService {
 	private final ProfileSkillRepository profileSkillRepository;
 	private final ProfileInterestRepository profileInterestRepository;
 	private final ProfileGoalRepository profileGoalRepository;
+	private final ProfilePhotoRepository profilePhotoRepository;
 
 	public OnboardingResponse findForUser(UUID userId) {
 		return profileRepository.findByUserId(userId)
@@ -110,6 +113,12 @@ public class OnboardingService {
 		if (!profileGoalRepository.existsByProfileId(profileId)) {
 			missingSteps.add(OnboardingStep.GOALS);
 		}
+		if (!profilePhotoRepository.existsByProfileIdAndStatus(
+				profileId,
+				ProfilePhotoStatus.READY
+		)) {
+			missingSteps.add(OnboardingStep.PHOTOS);
+		}
 
 		return missingSteps;
 	}
@@ -144,6 +153,7 @@ public class OnboardingService {
 						OnboardingStep.SKILLS,
 						OnboardingStep.INTERESTS,
 						OnboardingStep.GOALS,
+						OnboardingStep.PHOTOS,
 						OnboardingStep.ACTIVATION
 				)
 		);

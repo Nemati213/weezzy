@@ -13,6 +13,8 @@ import ru.itmo.nemat.weezzy.connection.match.ProfileMatchId;
 import ru.itmo.nemat.weezzy.connection.match.ProfileMatchRepository;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
+import ru.itmo.nemat.weezzy.profile.photo.ProfilePhotoService;
+import ru.itmo.nemat.weezzy.profile.photo.dto.ProfilePhotoResponse;
 
 import java.util.List;
 import java.util.Map;
@@ -30,6 +32,7 @@ public class ProfileBlockService {
 	private final ProfilePairLockService pairLockService;
 	private final BlockCursorCodec cursorCodec;
 	private final ProfileInteractionEventService interactionEventService;
+	private final ProfilePhotoService profilePhotoService;
 
 	@Transactional
 	public ProfileBlockResponse block(UUID blockerProfileId, UUID blockedProfileId) {
@@ -53,7 +56,11 @@ public class ProfileBlockService {
 		}
 		deleteMatchIfExists(blockerProfileId, blockedProfileId);
 
-		return ProfileBlockResponse.from(profileBlock, blockedProfile);
+		return ProfileBlockResponse.from(
+				profileBlock,
+				blockedProfile,
+				profilePhotoService.findReadyPhotos(blockedProfileId)
+		);
 	}
 
 	@Transactional(readOnly = true)
@@ -157,11 +164,17 @@ public class ProfileBlockService {
 		Map<UUID, Profile> profilesById = profileService.findAllByIds(blockedProfileIds)
 				.stream()
 				.collect(Collectors.toMap(Profile::getId, profile -> profile));
+		Map<UUID, List<ProfilePhotoResponse>> photosByProfileId =
+				profilePhotoService.findReadyPhotosByProfileIds(blockedProfileIds);
 
 		return blocks.stream()
 				.map(profileBlock -> ProfileBlockResponse.from(
 						profileBlock,
-						profilesById.get(profileBlock.getBlockedProfileId())
+						profilesById.get(profileBlock.getBlockedProfileId()),
+						photosByProfileId.getOrDefault(
+								profileBlock.getBlockedProfileId(),
+								List.of()
+						)
 				))
 				.toList();
 	}

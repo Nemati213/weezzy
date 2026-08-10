@@ -30,6 +30,8 @@ import ru.itmo.nemat.weezzy.profile.dto.ProfileResponse;
 import ru.itmo.nemat.weezzy.profile.dto.UpdateProfileRequest;
 import ru.itmo.nemat.weezzy.profile.goal.ProfileGoalService;
 import ru.itmo.nemat.weezzy.profile.interest.ProfileInterestService;
+import ru.itmo.nemat.weezzy.profile.photo.ProfilePhotoService;
+import ru.itmo.nemat.weezzy.profile.photo.dto.ProfilePhotoResponse;
 import ru.itmo.nemat.weezzy.profile.skill.ProfileSkillService;
 import ru.itmo.nemat.weezzy.security.JwtAuthenticatedUser;
 import ru.itmo.nemat.weezzy.skill.Skill;
@@ -37,6 +39,7 @@ import ru.itmo.nemat.weezzy.skill.dto.SkillResponse;
 
 import java.net.URI;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -49,6 +52,7 @@ public class ProfileController {
 	private final ProfileSkillService profileSkillService;
 	private final ProfileInterestService profileInterestService;
 	private final ProfileGoalService profileGoalService;
+	private final ProfilePhotoService profilePhotoService;
 
 	@PostMapping
 	public ResponseEntity<ProfileResponse> createProfile(
@@ -59,12 +63,18 @@ public class ProfileController {
 
 		return ResponseEntity
 				.created(URI.create("/api/profiles/" + profile.getId()))
-				.body(ProfileResponse.withContact(profile));
+				.body(ProfileResponse.withContact(profile, List.of()));
 	}
 
 	@GetMapping("/me")
-	public ResponseEntity<ProfileResponse> getProfile(@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser) {
-		return ResponseEntity.ok(ProfileResponse.withContact(service.findByUserId(authenticatedUser.id())));
+	public ResponseEntity<ProfileResponse> getProfile(
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser
+	) {
+		Profile profile = service.findByUserId(authenticatedUser.id());
+		return ResponseEntity.ok(ProfileResponse.withContact(
+				profile,
+				profilePhotoService.findReadyPhotos(profile.getId())
+		));
 	}
 
 	@GetMapping("/{id}")
@@ -86,9 +96,16 @@ public class ProfileController {
 				Sort.by("createdAt").descending().and(Sort.by("id").descending())
 		);
 
-		Page<ProfileResponse> profiles = service.findAll(pageable)
-				.map(ProfileResponse::from);
-		return ResponseEntity.ok(PageResponse.from(profiles));
+		Page<Profile> profiles = service.findAll(pageable);
+		Map<UUID, List<ProfilePhotoResponse>> photosByProfileId =
+				profilePhotoService.findReadyPhotosByProfileIds(
+						profiles.stream().map(Profile::getId).toList()
+				);
+		return ResponseEntity.ok(PageResponse.from(profiles.map(profile ->
+				ProfileResponse.from(
+						profile,
+						photosByProfileId.getOrDefault(profile.getId(), List.of())
+				))));
 	}
 
 	@PatchMapping("/me")
@@ -96,7 +113,11 @@ public class ProfileController {
 			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser,
 			@Valid @RequestBody UpdateProfileRequest request
 	) {
-		return ResponseEntity.ok(ProfileResponse.withContact(service.updateForUser(authenticatedUser.id(), request)));
+		Profile profile = service.updateForUser(authenticatedUser.id(), request);
+		return ResponseEntity.ok(ProfileResponse.withContact(
+				profile,
+				profilePhotoService.findReadyPhotos(profile.getId())
+		));
 	}
 
 	@PostMapping("/me/skills/{skillId}")

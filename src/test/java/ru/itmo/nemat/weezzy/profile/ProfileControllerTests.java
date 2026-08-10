@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -16,6 +17,8 @@ import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
 import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser.TestProfile;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.UUID;
+
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.not;
@@ -26,6 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static ru.itmo.nemat.weezzy.support.ProfilePhotoTestData.insertReadyPhoto;
 
 @Testcontainers
 @SpringBootTest
@@ -46,6 +50,9 @@ class ProfileControllerTests {
 
 	@Autowired
 	private ObjectMapper objectMapper;
+
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
 
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
@@ -111,12 +118,19 @@ class ProfileControllerTests {
 	void currentUserReadsOwnProfileWithoutProfileId() throws Exception {
 		TestProfile profile = AuthenticatedTestUser.register(mockMvc, objectMapper)
 				.createProfile("My Profile");
+		UUID photoId = insertReadyPhoto(
+				jdbcTemplate,
+				UUID.fromString(profile.id())
+		);
 
 		mockMvc.perform(profile.owner().authorize(get("/api/profiles/me")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.id").value(profile.id()))
 				.andExpect(jsonPath("$.displayName").value("My Profile"))
-				.andExpect(jsonPath("$.telegram").value("@authenticated_test"));
+				.andExpect(jsonPath("$.telegram").value("@authenticated_test"))
+				.andExpect(jsonPath("$.photos.length()").value(1))
+				.andExpect(jsonPath("$.photos[0].id").value(photoId.toString()))
+				.andExpect(jsonPath("$.photos[0].downloadUrl").isNotEmpty());
 	}
 
 	@Test

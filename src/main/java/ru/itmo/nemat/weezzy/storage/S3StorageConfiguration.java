@@ -5,6 +5,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
+import software.amazon.awssdk.http.apache.ApacheHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
@@ -20,6 +22,13 @@ class S3StorageConfiguration {
 				.endpointOverride(properties.endpoint())
 				.region(Region.of(properties.region()))
 				.credentialsProvider(credentialsProvider(properties))
+				.httpClientBuilder(ApacheHttpClient.builder()
+						.connectionTimeout(properties.connectTimeout())
+						.socketTimeout(properties.socketTimeout()))
+				.overrideConfiguration(ClientOverrideConfiguration.builder()
+						.apiCallAttemptTimeout(properties.apiCallAttemptTimeout())
+						.apiCallTimeout(properties.apiCallTimeout())
+						.build())
 				.serviceConfiguration(s3Configuration())
 				.build();
 	}

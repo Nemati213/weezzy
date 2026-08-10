@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -16,6 +17,8 @@ import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
 import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser.TestProfile;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.UUID;
+
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -24,6 +27,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static ru.itmo.nemat.weezzy.support.ProfilePhotoTestData.insertReadyPhoto;
 
 @Testcontainers
 @SpringBootTest
@@ -44,6 +48,9 @@ class ProfileMatchControllerTests {
 
 	@Autowired
 	private ObjectMapper objectMapper;
+
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
 
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
@@ -67,6 +74,7 @@ class ProfileMatchControllerTests {
 		TestProfile matched = createProfile("Match Own Candidate");
 		TestProfile outsiderFirst = createProfile("Match Outsider First");
 		TestProfile outsiderSecond = createProfile("Match Outsider Second");
+		insertReadyPhoto(jdbcTemplate, UUID.fromString(matched.id()));
 		createMatch(current, matched);
 		createMatch(outsiderFirst, outsiderSecond);
 
@@ -78,6 +86,11 @@ class ProfileMatchControllerTests {
 						.value("Match Own Candidate"))
 				.andExpect(jsonPath("$.content[0].matchedProfile.telegram")
 						.value("@authenticated_test"))
+				.andExpect(jsonPath("$.content[0].matchedProfile.photos.length()")
+						.value(1))
+				.andExpect(jsonPath(
+						"$.content[0].matchedProfile.photos[0].downloadUrl"
+				).isNotEmpty())
 				.andExpect(jsonPath("$.content[0].createdAt").isNotEmpty())
 				.andExpect(content().string(not(containsString(outsiderFirst.id()))))
 				.andExpect(content().string(not(containsString(outsiderSecond.id()))));

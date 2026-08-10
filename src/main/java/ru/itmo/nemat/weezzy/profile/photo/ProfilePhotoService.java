@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import ru.itmo.nemat.weezzy.onboarding.OnboardingService;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 import ru.itmo.nemat.weezzy.profile.photo.dto.CreatePhotoUploadRequest;
@@ -16,6 +17,7 @@ import ru.itmo.nemat.weezzy.storage.dto.PresignedUpload;
 import ru.itmo.nemat.weezzy.storage.dto.StoredObjectMetadata;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -35,6 +37,7 @@ public class ProfilePhotoService {
 	private final ProfileService profileService;
 	private final ObjectStorageService storageService;
 	private final ProfilePhotoProperties properties;
+	private final OnboardingService onboardingService;
 
 	@Transactional
 	public PhotoUploadResponse createUpload(
@@ -102,10 +105,35 @@ public class ProfilePhotoService {
 	@Transactional(readOnly = true)
 	public List<ProfilePhotoResponse> getPhotos(UUID userId) {
 		Profile profile = profileService.findByUserId(userId);
+		return findReadyPhotos(profile.getId());
+	}
+
+	@Transactional(readOnly = true)
+	public List<ProfilePhotoResponse> findReadyPhotos(UUID profileId) {
 		return toResponses(photoRepository
 				.findAllByProfileIdAndStatusOrderByPositionAsc(
-						profile.getId(),
+						profileId,
 						ProfilePhotoStatus.READY
+				));
+	}
+
+	@Transactional(readOnly = true)
+	public Map<UUID, List<ProfilePhotoResponse>> findReadyPhotosByProfileIds(
+			Collection<UUID> profileIds
+	) {
+		if (profileIds.isEmpty()) {
+			return Map.of();
+		}
+
+		return photoRepository
+				.findAllByProfileIdInAndStatusOrderByProfileIdAscPositionAsc(
+						profileIds,
+						ProfilePhotoStatus.READY
+				)
+				.stream()
+				.collect(Collectors.groupingBy(
+						photo -> photo.getProfile().getId(),
+						Collectors.mapping(this::toResponse, Collectors.toList())
 				));
 	}
 
@@ -169,6 +197,7 @@ public class ProfilePhotoService {
 				).ifPresent(nextAvatar -> nextAvatar.setIsAvatar(true));
 		}
 		compactPositions(profile.getId());
+		onboardingService.moveToDraftIfIncomplete(profile);
 	}
 
 	@Transactional(propagation = Propagation.MANDATORY)
