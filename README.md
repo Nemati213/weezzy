@@ -23,6 +23,7 @@ Weezzy — backend внутреннего ITMO-сервиса для нетво�
 - Redis rate limit для login/register в production;
 - onboarding с прогрессом, недостающими шагами и проверкой готовности к активации;
 - профиль со статусами `DRAFT`, `ACTIVE`, `HIDDEN`;
+- фотографии профиля с прямой загрузкой в S3/MinIO, порядком и avatar;
 - skills, interests и goals профиля;
 - каталоги и модерация пользовательских предложений новых skills/interests;
 - рекомендации со scoring и сортировкой в PostgreSQL;
@@ -42,6 +43,7 @@ Weezzy — backend внутреннего ITMO-сервиса для нетво�
 - Spring MVC, Validation, Security, Data JPA и Data Redis;
 - PostgreSQL 17, pgvector image и Flyway;
 - Redis 8;
+- S3-compatible object storage и MinIO для локальной разработки;
 - JWT и BCrypt;
 - Gradle Kotlin DSL;
 - JUnit 5, MockMvc и Testcontainers;
@@ -55,7 +57,7 @@ Weezzy — backend внутреннего ITMO-сервиса для нетво�
 - JDK 21;
 - Docker Desktop с Docker Compose.
 
-Поднять PostgreSQL, Redis и pgAdmin:
+Поднять PostgreSQL, Redis, pgAdmin и MinIO:
 
 ```powershell
 docker compose up -d
@@ -76,7 +78,9 @@ docker compose up -d
 - readiness: `http://localhost:8080/actuator/health/readiness`;
 - PostgreSQL: `localhost:5433`;
 - Redis: `localhost:6380`;
-- pgAdmin: `http://localhost:5050`.
+- pgAdmin: `http://localhost:5050`;
+- MinIO S3 API: `http://localhost:9000`;
+- MinIO Console: `http://localhost:9001`.
 
 Локальные реквизиты PostgreSQL:
 
@@ -85,6 +89,16 @@ database: weezzy
 username: weezzy
 password: weezzy_dev_password
 ```
+
+Локальные реквизиты MinIO:
+
+```text
+username: weezzy
+password: weezzy_dev_password
+bucket: weezzy-profile-photos
+```
+
+Bucket создаётся автоматически контейнером `minio-init` и остаётся приватным.
 
 Локальный rate limit отключён. Redis используется rate limiter-ом при включении
 `app.security.rate-limit.enabled=true` и обязателен в production.
@@ -125,6 +139,10 @@ MAIL_HOST
 MAIL_USERNAME
 MAIL_PASSWORD
 MAIL_FROM
+S3_ENDPOINT
+S3_ACCESS_KEY
+S3_SECRET_KEY
+S3_BUCKET
 ```
 
 Опциональные variables:
@@ -144,6 +162,12 @@ PASSWORD_RESET_TOKEN_TTL=PT30M
 PASSWORD_FORGOT_RATE_LIMIT_CAPACITY=3
 PASSWORD_FORGOT_RATE_LIMIT_WINDOW=1h
 MAIL_PORT=587
+S3_REGION=us-east-1
+S3_UPLOAD_URL_TTL=PT15M
+S3_DOWNLOAD_URL_TTL=PT1H
+PROFILE_PHOTO_MAX_FILE_SIZE=10485760
+PROFILE_PHOTO_MAX_COUNT=6
+PROFILE_PHOTO_PENDING_TTL=P1D
 WEEZZY_VERSION=<release-version>
 ```
 
@@ -259,6 +283,21 @@ POST   /api/profiles/me/goals/{goalId}
 GET    /api/profiles/me/goals
 DELETE /api/profiles/me/goals/{goalId}
 ```
+
+Фотографии своего профиля:
+
+```text
+POST   /api/profiles/me/photos/uploads
+POST   /api/profiles/me/photos/{photoId}/confirm
+GET    /api/profiles/me/photos
+PATCH  /api/profiles/me/photos/order
+PUT    /api/profiles/me/photos/{photoId}/avatar
+DELETE /api/profiles/me/photos/{photoId}
+```
+
+Upload endpoint возвращает временный presigned `PUT` URL. Клиент загружает файл
+напрямую в object storage, после чего подтверждает загрузку отдельным запросом.
+Готовые фотографии возвращаются с временными presigned `GET` URL.
 
 Telegram отсутствует в обычном публичном ответе профиля. Контакт возвращается
 только владельцу и участникам существующего match. Block в любом направлении

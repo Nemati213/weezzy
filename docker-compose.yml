@@ -46,7 +46,41 @@ services:
       postgres:
         condition: service_healthy
 
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: weezzy-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-weezzy}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-weezzy_dev_password}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+
+  minio-init:
+    image: quay.io/minio/mc:latest
+    container_name: weezzy-minio-init
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-weezzy}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-weezzy_dev_password}
+      MINIO_BUCKET: ${MINIO_BUCKET:-weezzy-profile-photos}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; do
+          sleep 2
+        done
+        mc mb --ignore-existing "local/$$MINIO_BUCKET"
+        mc anonymous set none "local/$$MINIO_BUCKET"
+
 volumes:
   postgres-data:
   redis-data:
   pgadmin-data:
+  minio-data:

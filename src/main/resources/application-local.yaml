@@ -12,3 +12,13 @@ spring:
     properties:
       hibernate:
         format_sql: true
+
+app:
+  storage:
+    endpoint: ${S3_ENDPOINT:http://localhost:9000}
+    region: ${S3_REGION:us-east-1}
+    access-key: ${S3_ACCESS_KEY:weezzy}
+    secret-key: ${S3_SECRET_KEY:weezzy_dev_password}
+    bucket: ${S3_BUCKET:weezzy-profile-photos}
+    upload-url-ttl: ${S3_UPLOAD_URL_TTL:PT15M}
+    download-url-ttl: ${S3_DOWNLOAD_URL_TTL:PT1H}

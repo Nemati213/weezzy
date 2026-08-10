@@ -75,6 +75,12 @@ public class ProfileService {
 				.orElseThrow(() -> new ProfileNotFoundException(id));
 	}
 
+	@Transactional(propagation = Propagation.MANDATORY)
+	public Profile findByUserIdForUpdate(UUID userId) {
+		return profileRepository.findByUserIdForUpdate(userId)
+				.orElseThrow(() -> new ProfileNotFoundException(userId));
+	}
+
 	public Profile findByUserId(UUID userId) {
 		return profileRepository.findByUserId(userId).orElseThrow(() -> new ProfileNotFoundException(userId));
 	}

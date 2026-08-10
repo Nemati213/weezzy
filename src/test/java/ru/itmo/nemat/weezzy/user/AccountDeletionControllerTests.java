@@ -8,6 +8,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -33,6 +34,9 @@ import ru.itmo.nemat.weezzy.profile.goal.ProfileGoal;
 import ru.itmo.nemat.weezzy.profile.goal.ProfileGoalRepository;
 import ru.itmo.nemat.weezzy.profile.interest.ProfileInterest;
 import ru.itmo.nemat.weezzy.profile.interest.ProfileInterestRepository;
+import ru.itmo.nemat.weezzy.profile.photo.ProfilePhoto;
+import ru.itmo.nemat.weezzy.profile.photo.ProfilePhotoRepository;
+import ru.itmo.nemat.weezzy.profile.photo.ProfilePhotoStatus;
 import ru.itmo.nemat.weezzy.profile.skill.ProfileSkill;
 import ru.itmo.nemat.weezzy.profile.skill.ProfileSkillRepository;
 import ru.itmo.nemat.weezzy.recommendation.impression.ProfileRecommendationImpression;
@@ -42,6 +46,7 @@ import ru.itmo.nemat.weezzy.skill.Skill;
 import ru.itmo.nemat.weezzy.skill.SkillRepository;
 import ru.itmo.nemat.weezzy.skill.suggestion.SkillSuggestion;
 import ru.itmo.nemat.weezzy.skill.suggestion.SkillSuggestionRepository;
+import ru.itmo.nemat.weezzy.storage.ObjectStorageService;
 import ru.itmo.nemat.weezzy.user.emailverification.EmailVerificationTokenRepository;
 import ru.itmo.nemat.weezzy.user.emailverification.LocalEmailVerificationSender;
 import ru.itmo.nemat.weezzy.user.passwordreset.LocalPasswordResetSender;
@@ -55,6 +60,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -91,6 +97,8 @@ class AccountDeletionControllerTests {
 	@Autowired
 	private ProfileGoalRepository profileGoalRepository;
 	@Autowired
+	private ProfilePhotoRepository profilePhotoRepository;
+	@Autowired
 	private SkillRepository skillRepository;
 	@Autowired
 	private InterestRepository interestRepository;
@@ -116,6 +124,8 @@ class AccountDeletionControllerTests {
 	private EmailVerificationTokenRepository emailVerificationTokenRepository;
 	@Autowired
 	private PasswordResetTokenRepository passwordResetTokenRepository;
+	@MockitoBean
+	private ObjectStorageService objectStorageService;
 
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
@@ -175,6 +185,18 @@ class AccountDeletionControllerTests {
 	}
 
 	private void createPrivateData(TestAccount account, TestAccount other) {
+		Profile profile = profileRepository.findById(account.profileId()).orElseThrow();
+		ProfilePhoto photo = new ProfilePhoto();
+		photo.setProfile(profile);
+		photo.setObjectKey("profiles/" + account.profileId() + "/account-delete-photo");
+		photo.setContentType("image/jpeg");
+		photo.setSizeBytes(100L);
+		photo.setPosition(0);
+		photo.setIsAvatar(true);
+		photo.setStatus(ProfilePhotoStatus.READY);
+		photo.setUploadedAt(LocalDateTime.now());
+		profilePhotoRepository.save(photo);
+
 		Skill skill = new Skill();
 		skill.setName("Delete skill " + UUID.randomUUID());
 		skill = skillRepository.save(skill);
@@ -268,6 +290,12 @@ class AccountDeletionControllerTests {
 		assertThat(profileSkillRepository.findAllByProfileId(account.profileId())).isEmpty();
 		assertThat(profileInterestRepository.findAllByProfileId(account.profileId())).isEmpty();
 		assertThat(profileGoalRepository.findAllByProfileId(account.profileId())).isEmpty();
+		assertThat(profilePhotoRepository.findAllByProfileIdOrderByPositionAsc(
+				account.profileId()
+		)).isEmpty();
+		verify(objectStorageService).deleteObject(
+				"profiles/" + account.profileId() + "/account-delete-photo"
+		);
 		assertThat(impressionRepository.findAll()).noneMatch(impression ->
 				involves(impression.getSourceProfileId(), impression.getTargetProfileId(), account)
 		);

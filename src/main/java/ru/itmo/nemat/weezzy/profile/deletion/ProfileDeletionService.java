@@ -11,6 +11,7 @@ import ru.itmo.nemat.weezzy.profile.ProfileRepository;
 import ru.itmo.nemat.weezzy.profile.ProfileStatus;
 import ru.itmo.nemat.weezzy.profile.goal.ProfileGoalRepository;
 import ru.itmo.nemat.weezzy.profile.interest.ProfileInterestRepository;
+import ru.itmo.nemat.weezzy.profile.photo.ProfilePhotoService;
 import ru.itmo.nemat.weezzy.profile.skill.ProfileSkillRepository;
 import ru.itmo.nemat.weezzy.recommendation.impression.ProfileRecommendationImpressionRepository;
 
@@ -26,6 +27,7 @@ public class ProfileDeletionService {
 	private final ProfileSkillRepository profileSkillRepository;
 	private final ProfileInterestRepository profileInterestRepository;
 	private final ProfileGoalRepository profileGoalRepository;
+	private final ProfilePhotoService profilePhotoService;
 	private final ProfileRecommendationImpressionRepository impressionRepository;
 	private final ProfileInteractionEventRepository interactionEventRepository;
 	private final ProfileBlockRepository blockRepository;
@@ -41,6 +43,7 @@ public class ProfileDeletionService {
 	}
 
 	private void deletePrivateRelations(UUID profileId) {
+		profilePhotoService.deleteAllForProfile(profileId);
 		profileSkillRepository.deleteAllByProfileId(profileId);
 		profileInterestRepository.deleteAllByProfileId(profileId);
 		profileGoalRepository.deleteAllByProfileId(profileId);
