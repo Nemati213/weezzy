@@ -108,6 +108,15 @@ public class ProfileService {
 		}
 	}
 
+	@Transactional(readOnly = true)
+	public Profile findNotDeletedById(UUID profileId) {
+		Profile profile = findById(profileId);
+		if (profile.getStatus() == ProfileStatus.DELETED) {
+			throw new DeletedProfileInteractionException(profile.getId());
+		}
+		return profile;
+	}
+
 	@Transactional
 	public Profile update(UUID id, UpdateProfileRequest request) {
 		Profile profile = findByIdForUpdate(id);

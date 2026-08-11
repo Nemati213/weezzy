@@ -61,6 +61,15 @@ public class UserService {
 		return user;
 	}
 
+	@Transactional(readOnly = true)
+	public User findAdminById(UUID id) {
+		User user = findById(id);
+		if (user.getRole() != UserRole.ADMIN) {
+			throw new AdminRoleRequiredException(id);
+		}
+		return user;
+	}
+
 	public boolean passwordMatches(User user, String rawPassword) {
 		return passwordEncoder.matches(rawPassword, user.getPasswordHash());
 	}
