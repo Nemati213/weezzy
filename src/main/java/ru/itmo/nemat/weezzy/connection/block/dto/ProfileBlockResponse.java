@@ -7,6 +7,7 @@ import ru.itmo.nemat.weezzy.profile.photo.dto.ProfilePhotoResponse;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 public record ProfileBlockResponse(
 		ProfileResponse blockedProfile,
@@ -19,6 +20,16 @@ public record ProfileBlockResponse(
 	) {
 		return new ProfileBlockResponse(
 				ProfileResponse.from(blockedProfile, photos),
+				profileBlock.getCreatedAt()
+		);
+	}
+
+	public static ProfileBlockResponse unavailable(
+			ProfileBlock profileBlock,
+			UUID blockedProfileId
+	) {
+		return new ProfileBlockResponse(
+				ProfileResponse.unavailable(blockedProfileId),
 				profileBlock.getCreatedAt()
 		);
 	}

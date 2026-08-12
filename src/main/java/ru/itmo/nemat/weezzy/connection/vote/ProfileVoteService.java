@@ -43,6 +43,8 @@ public class ProfileVoteService {
 
 		pairLockService.lock(sourceProfileId, targetProfileId);
 		blockService.ensureInteractionAllowed(sourceProfileId, targetProfileId);
+		profileService.ensureOwnerAccessAllowed(sourceProfileId);
+		profileService.ensureOwnerAccessAllowed(targetProfileId);
 
 		ProfileVote vote = repository.findBySourceProfileIdAndTargetProfileId(
 				sourceProfileId,

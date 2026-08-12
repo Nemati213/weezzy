@@ -15,6 +15,7 @@ import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 import ru.itmo.nemat.weezzy.profile.photo.ProfilePhotoService;
 import ru.itmo.nemat.weezzy.profile.photo.dto.ProfilePhotoResponse;
+import ru.itmo.nemat.weezzy.user.AccountAccessService;
 
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,7 @@ public class ProfileBlockService {
 	private final BlockCursorCodec cursorCodec;
 	private final ProfileInteractionEventService interactionEventService;
 	private final ProfilePhotoService profilePhotoService;
+	private final AccountAccessService accountAccessService;
 
 	@Transactional
 	public ProfileBlockResponse block(UUID blockerProfileId, UUID blockedProfileId) {
@@ -56,11 +58,12 @@ public class ProfileBlockService {
 		}
 		deleteMatchIfExists(blockerProfileId, blockedProfileId);
 
-		return ProfileBlockResponse.from(
-				profileBlock,
-				blockedProfile,
-				profilePhotoService.findReadyPhotos(blockedProfileId)
-		);
+		if (blockedProfile.getUser() != null
+				&& !accountAccessService.isAccessAllowed(blockedProfile.getUser().getId())) {
+			return ProfileBlockResponse.unavailable(profileBlock, blockedProfileId);
+		}
+		return ProfileBlockResponse.from(profileBlock, blockedProfile,
+				profilePhotoService.findReadyPhotos(blockedProfileId));
 	}
 
 	@Transactional(readOnly = true)
@@ -164,19 +167,47 @@ public class ProfileBlockService {
 		Map<UUID, Profile> profilesById = profileService.findAllByIds(blockedProfileIds)
 				.stream()
 				.collect(Collectors.toMap(Profile::getId, profile -> profile));
+		Set<UUID> restrictedUserIds = accountAccessService.findRestrictedUserIds(
+				profilesById.values().stream()
+						.filter(profile -> profile.getUser() != null)
+						.map(profile -> profile.getUser().getId())
+						.collect(Collectors.toSet())
+		);
+		Set<UUID> visibleProfileIds = profilesById.values().stream()
+				.filter(profile -> profile.getUser() == null
+						|| !restrictedUserIds.contains(profile.getUser().getId()))
+				.map(Profile::getId)
+				.collect(Collectors.toSet());
 		Map<UUID, List<ProfilePhotoResponse>> photosByProfileId =
-				profilePhotoService.findReadyPhotosByProfileIds(blockedProfileIds);
+				profilePhotoService.findReadyPhotosByProfileIds(visibleProfileIds);
 
 		return blocks.stream()
-				.map(profileBlock -> ProfileBlockResponse.from(
+				.map(profileBlock -> toResponse(
 						profileBlock,
-						profilesById.get(profileBlock.getBlockedProfileId()),
-						photosByProfileId.getOrDefault(
-								profileBlock.getBlockedProfileId(),
-								List.of()
-						)
+						profilesById,
+						restrictedUserIds,
+						photosByProfileId
 				))
 				.toList();
+	}
+
+	private ProfileBlockResponse toResponse(
+			ProfileBlock profileBlock,
+			Map<UUID, Profile> profilesById,
+			Set<UUID> restrictedUserIds,
+			Map<UUID, List<ProfilePhotoResponse>> photosByProfileId
+	) {
+		UUID blockedProfileId = profileBlock.getBlockedProfileId();
+		Profile blockedProfile = profilesById.get(blockedProfileId);
+		if (blockedProfile.getUser() != null
+				&& restrictedUserIds.contains(blockedProfile.getUser().getId())) {
+			return ProfileBlockResponse.unavailable(profileBlock, blockedProfileId);
+		}
+		return ProfileBlockResponse.from(
+				profileBlock,
+				blockedProfile,
+				photosByProfileId.getOrDefault(blockedProfileId, List.of())
+		);
 	}
 
 	private BlockCursor toCursor(ProfileBlock profileBlock) {

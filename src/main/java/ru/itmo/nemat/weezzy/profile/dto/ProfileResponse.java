@@ -39,6 +39,24 @@ public record ProfileResponse(
 		return toResponse(profile, true, photos);
 	}
 
+	public static ProfileResponse unavailable(UUID profileId) {
+		return new ProfileResponse(
+				profileId,
+				"Unavailable profile",
+				null,
+				null,
+				null,
+				null,
+				null,
+				null,
+				null,
+				ProfileStatus.HIDDEN,
+				null,
+				false,
+				List.of()
+		);
+	}
+
 	private static ProfileResponse toResponse(
 			Profile profile,
 			boolean includeContact,

@@ -9,9 +9,11 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.nemat.weezzy.onboarding.OnboardingService;
 import ru.itmo.nemat.weezzy.profile.dto.CreateProfileRequest;
 import ru.itmo.nemat.weezzy.profile.dto.UpdateProfileRequest;
+import ru.itmo.nemat.weezzy.user.AccountAccessService;
 import ru.itmo.nemat.weezzy.user.User;
 import ru.itmo.nemat.weezzy.user.UserService;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -23,6 +25,7 @@ public class ProfileService {
 	private final ProfileRepository profileRepository;
 	private final UserService userService;
 	private final OnboardingService onboardingService;
+	private final AccountAccessService accountAccessService;
 
 	@Transactional
 	public Profile create(CreateProfileRequest request) {
@@ -92,12 +95,24 @@ public class ProfileService {
 
 	@Transactional(readOnly = true)
 	public List<Profile> findAll() {
-		return profileRepository.findAllByStatusNot(ProfileStatus.DELETED);
+		return profileRepository.findAllVisible(LocalDateTime.now());
 	}
 
 	@Transactional(readOnly = true)
 	public Page<Profile> findAll(Pageable pageable) {
-		return profileRepository.findAllByStatusNot(ProfileStatus.DELETED, pageable);
+		return profileRepository.findAllVisible(LocalDateTime.now(), pageable);
+	}
+
+	@Transactional(readOnly = true)
+	public Profile findVisibleById(UUID profileId) {
+		Profile profile = findById(profileId);
+		ensureOwnerAccessAllowed(profile);
+		return profile;
+	}
+
+	@Transactional(readOnly = true)
+	public void ensureOwnerAccessAllowed(UUID profileId) {
+		ensureOwnerAccessAllowed(findById(profileId));
 	}
 
 	@Transactional(readOnly = true)
@@ -166,5 +181,12 @@ public class ProfileService {
 			profile.setStatus(request.status());
 		}
 		onboardingService.moveToDraftIfIncomplete(profile);
+	}
+
+	private void ensureOwnerAccessAllowed(Profile profile) {
+		if (profile.getUser() != null
+				&& !accountAccessService.isAccessAllowed(profile.getUser().getId())) {
+			throw new ProfileNotFoundException(profile.getId());
+		}
 	}
 }

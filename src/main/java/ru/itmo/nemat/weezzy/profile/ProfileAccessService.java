@@ -22,7 +22,7 @@ public class ProfileAccessService {
 
 	@Transactional(readOnly = true)
 	public ProfileResponse findByIdForUser(UUID viewerUserId, UUID targetProfileId) {
-		Profile targetProfile = profileService.findById(targetProfileId);
+		Profile targetProfile = profileService.findVisibleById(targetProfileId);
 		boolean includeContact = profileService.findOptionalByUserId(viewerUserId)
 				.map(viewerProfile -> canViewContact(
 						viewerProfile,

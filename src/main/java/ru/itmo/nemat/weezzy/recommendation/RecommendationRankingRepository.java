@@ -28,6 +28,16 @@ public class RecommendationRankingRepository {
 				FROM profiles profile
 				WHERE profile.status = 'ACTIVE'
 					AND profile.id <> :sourceProfileId
+					AND NOT EXISTS (
+						SELECT 1
+						FROM account_sanctions sanction
+						WHERE sanction.target_user_id = profile.user_id
+							AND sanction.status = 'ACTIVE'
+							AND (
+								sanction.type = 'PERMANENT_BAN'
+								OR sanction.expires_at > CURRENT_TIMESTAMP
+							)
+					)
 					AND (
 						:hasFacultyFilter = FALSE
 						OR profile.faculty = :faculty

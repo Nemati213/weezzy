@@ -17,6 +17,7 @@ import ru.itmo.nemat.weezzy.profile.ProfileService;
 import ru.itmo.nemat.weezzy.profile.photo.ProfilePhotoService;
 import ru.itmo.nemat.weezzy.profile.photo.dto.ProfilePhotoResponse;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -44,6 +45,8 @@ public class ProfileMatchService {
 
 		pairLockService.lock(firstProfileId, secondProfileId);
 		blockService.ensureInteractionAllowed(firstProfileId, secondProfileId);
+		profileService.ensureOwnerAccessAllowed(firstProfileId);
+		profileService.ensureOwnerAccessAllowed(secondProfileId);
 
 		ProfileMatchId matchId = normalizedId(firstProfileId, secondProfileId);
 
@@ -60,9 +63,9 @@ public class ProfileMatchService {
 		profileService.findById(profileId);
 
 		List<ProfileMatch> matches =
-				repository.findByFirstProfileIdOrSecondProfileIdOrderByCreatedAtDesc(
+				repository.findVisibleByProfileId(
 						profileId,
-						profileId
+						LocalDateTime.now()
 				);
 
 		return toResponses(profileId, matches);
@@ -77,11 +80,13 @@ public class ProfileMatchService {
 		profileService.findById(profileId);
 		MatchCursor cursor = cursorCodec.decode(encodedCursor);
 		PageRequest pageRequest = PageRequest.of(0, limit + 1);
+		LocalDateTime now = LocalDateTime.now();
 
 		List<ProfileMatch> fetched = cursor == null
-				? repository.findFirstPage(profileId, pageRequest)
+				? repository.findFirstPage(profileId, now, pageRequest)
 				: repository.findNextPage(
 						profileId,
+						now,
 						cursor.createdAt(),
 						cursor.firstProfileId(),
 						cursor.secondProfileId(),
