@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.nemat.weezzy.security.session.RefreshTokenCodec.GeneratedRefreshToken;
 import ru.itmo.nemat.weezzy.security.session.RefreshTokenCodec.ParsedRefreshToken;
+import ru.itmo.nemat.weezzy.user.AccountAccessService;
 import ru.itmo.nemat.weezzy.user.User;
 
 import java.time.Duration;
@@ -22,6 +23,7 @@ public class AuthSessionService {
 	private final AuthSessionRepository authSessionRepository;
 	private final RefreshTokenRepository refreshTokenRepository;
 	private final RefreshTokenCodec refreshTokenCodec;
+	private final AccountAccessService accountAccessService;
 
 	@Value("${app.security.session.refresh-token-ttl:P30D}")
 	private Duration refreshTokenTtl;
@@ -56,6 +58,9 @@ public class AuthSessionService {
 		}
 
 		AuthSession session = currentToken.getSession();
+
+		accountAccessService.ensureAccessAllowed(session.getUser().getId());
+
 		LocalDateTime now = LocalDateTime.now();
 		if (session.getRevokedAt() != null || currentToken.getRevokedAt() != null) {
 			throw new InvalidRefreshTokenException();
@@ -115,6 +120,11 @@ public class AuthSessionService {
 	@Transactional
 	public void revokeAllAfterPasswordReset(UUID userId) {
 		revokeAll(userId, AuthSessionRevokeReason.PASSWORD_RESET);
+	}
+
+	@Transactional
+	public void revokeAllForSanction(UUID userId) {
+		revokeAll(userId, AuthSessionRevokeReason.ACCOUNT_SANCTION);
 	}
 
 	private void revokeAll(UUID userId, AuthSessionRevokeReason reason) {

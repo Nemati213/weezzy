@@ -7,6 +7,7 @@ import java.util.UUID;
 public record JwtAuthenticatedUser(
 		UUID id,
 		String email,
-		UserRole role
+		UserRole role,
+		long issuedAtEpochMilli
 ) {
 }

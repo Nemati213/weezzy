@@ -26,6 +26,8 @@ app:
       goal: 5
     impression-cooldown: 7d
   security:
+    access-token-revocation:
+      enabled: ${ACCESS_TOKEN_REVOCATION_ENABLED:true}
     jwt:
       secret: weezzy-dev-secret-must-be-changed-before-production-123456
       access-token-ttl: PT15M

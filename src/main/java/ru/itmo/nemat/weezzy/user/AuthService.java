@@ -28,6 +28,7 @@ public class AuthService {
 	private final EmailVerificationService emailVerificationService;
 	private final PasswordResetService passwordResetService;
 	private final ApplicationEventPublisher eventPublisher;
+	private final AccountAccessService accountAccessService;
 
 	@Transactional
 	public RegistrationResponse register(
@@ -49,6 +50,7 @@ public class AuthService {
 			String ipAddress
 	) {
 		User user = userService.authenticate(email, rawPassword);
+		accountAccessService.ensureAccessAllowed(user.getId());
 		if (user.getEmailVerifiedAt() == null) {
 			throw new EmailNotVerifiedException();
 		}

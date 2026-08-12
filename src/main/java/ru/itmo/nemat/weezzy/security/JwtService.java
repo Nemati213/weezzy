@@ -54,6 +54,7 @@ public class JwtService {
 				"userId", user.getId().toString(),
 				"role", user.getRole().name(),
 				"iat", issuedAt.getEpochSecond(),
+				"iatMs", issuedAt.toEpochMilli(),
 				"exp", expiresAt.getEpochSecond()
 		);
 
@@ -80,10 +81,18 @@ public class JwtService {
 				return Optional.empty();
 			}
 
+			long issuedAtEpochMilli = payload.has("iatMs")
+					? payload.path("iatMs").asLong()
+					: payload.path("iat").asLong() * 1000;
+			if (issuedAtEpochMilli <= 0) {
+				return Optional.empty();
+			}
+
 			return Optional.of(new JwtAuthenticatedUser(
 					UUID.fromString(payload.path("userId").asText()),
 					payload.path("sub").asText(),
-					UserRole.valueOf(payload.path("role").asText())
+					UserRole.valueOf(payload.path("role").asText()),
+					issuedAtEpochMilli
 			));
 		} catch (RuntimeException exception) {
 			return Optional.empty();

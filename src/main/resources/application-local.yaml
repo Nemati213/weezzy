@@ -1,4 +1,8 @@
 spring:
+  data:
+    redis:
+      host: localhost
+      port: 6380
   datasource:
     url: jdbc:postgresql://localhost:5433/weezzy
     username: weezzy

@@ -5,5 +5,6 @@ public enum AuthSessionRevokeReason {
 	LOGOUT_ALL,
 	PASSWORD_RESET,
 	TOKEN_REUSE,
-	EXPIRED
+	EXPIRED,
+	ACCOUNT_SANCTION
 }

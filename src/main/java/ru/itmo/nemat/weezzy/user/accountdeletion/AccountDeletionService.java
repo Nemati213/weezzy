@@ -5,6 +5,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.nemat.weezzy.interest.suggestion.InterestSuggestionRepository;
 import ru.itmo.nemat.weezzy.profile.deletion.ProfileDeletionService;
+import ru.itmo.nemat.weezzy.security.revocation.AccessTokenRevocationReason;
+import ru.itmo.nemat.weezzy.security.revocation.AccessTokenRevocationService;
 import ru.itmo.nemat.weezzy.skill.suggestion.SkillSuggestionRepository;
 import ru.itmo.nemat.weezzy.user.User;
 import ru.itmo.nemat.weezzy.user.UserNotFoundException;
@@ -21,6 +23,7 @@ public class AccountDeletionService {
 	private final ProfileDeletionService profileDeletionService;
 	private final SkillSuggestionRepository skillSuggestionRepository;
 	private final InterestSuggestionRepository interestSuggestionRepository;
+	private final AccessTokenRevocationService accessTokenRevocationService;
 
 	@Transactional
 	public void deleteAccount(UUID userId, String currentPassword) {
@@ -34,6 +37,10 @@ public class AccountDeletionService {
 		deleteSuggestionData(userId);
 		userRepository.delete(user);
 		userRepository.flush();
+		accessTokenRevocationService.revokeAllIssuedTokens(
+				userId,
+				AccessTokenRevocationReason.ACCOUNT_DELETION
+		);
 	}
 
 	private void deleteSuggestionData(UUID userId) {
