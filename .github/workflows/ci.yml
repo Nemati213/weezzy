@@ -81,6 +81,7 @@ jobs:
           java-version: "21"
 
       - name: Generate and submit dependency graph
+        continue-on-error: true
         uses: gradle/actions/dependency-submission@v6
 
   codeql:
