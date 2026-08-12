@@ -14,6 +14,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 import ru.itmo.nemat.weezzy.security.JwtService;
+import ru.itmo.nemat.weezzy.moderation.sanction.AccountSanctionType;
+import ru.itmo.nemat.weezzy.moderation.sanction.dto.CreateAccountSanctionRequest;
 import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
 import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser.TestProfile;
 import ru.itmo.nemat.weezzy.user.UserRepository;
@@ -145,6 +147,100 @@ class RecommendationControllerTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.content.length()").value(1))
 				.andExpect(jsonPath("$.nextCursor").isNotEmpty());
+	}
+
+	@Test
+	void recommendationsExcludeProfilesWithEffectiveSanctions() throws Exception {
+		TestProfile source = createProfile("Sanction Recommendation Source");
+		TestProfile candidate = createProfile("Sanction Recommendation Candidate");
+		String goal = idFromLocation(createGoal(
+				"SANCTION_RECOMMENDATION_GOAL",
+				"Sanction Recommendation Goal"
+		));
+		addGoal(source, goal);
+		addGoal(candidate, goal);
+		activateProfile(candidate);
+
+		AuthenticatedTestUser admin = AuthenticatedTestUser.registerAdmin(
+				mockMvc,
+				objectMapper,
+				userRepository,
+				jwtService
+		);
+		mockMvc.perform(admin.authorize(post(
+						"/api/admin/users/{userId}/sanctions",
+						candidate.owner().userId()
+				))
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(objectMapper.writeValueAsString(
+							new CreateAccountSanctionRequest(
+									AccountSanctionType.PERMANENT_BAN,
+									"Recommendation visibility test",
+									null,
+									null
+							)
+					)))
+				.andExpect(status().isCreated());
+
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content").isEmpty())
+				.andExpect(content().string(not(containsString(
+						"Sanction Recommendation Candidate"
+				))));
+	}
+
+	@Test
+	void recommendationsRestoreProfileAfterTemporarySanctionExpires() throws Exception {
+		TestProfile source = createProfile("Expired Sanction Source");
+		TestProfile candidate = createProfile("Expired Sanction Candidate");
+		String goal = idFromLocation(createGoal(
+				"EXPIRED_SANCTION_RECOMMENDATION_GOAL",
+				"Expired Sanction Recommendation Goal"
+		));
+		addGoal(source, goal);
+		addGoal(candidate, goal);
+		activateProfile(candidate);
+
+		AuthenticatedTestUser admin = AuthenticatedTestUser.registerAdmin(
+				mockMvc,
+				objectMapper,
+				userRepository,
+				jwtService
+		);
+		String response = mockMvc.perform(admin.authorize(post(
+						"/api/admin/users/{userId}/sanctions",
+						candidate.owner().userId()
+				))
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(objectMapper.writeValueAsString(
+							new CreateAccountSanctionRequest(
+									AccountSanctionType.TEMPORARY_SUSPENSION,
+									"Temporary recommendation restriction",
+									LocalDateTime.now().plusDays(1),
+									null
+							)
+					)))
+				.andExpect(status().isCreated())
+				.andReturn()
+				.getResponse()
+				.getContentAsString();
+		UUID sanctionId = UUID.fromString(objectMapper.readTree(response).path("id").asText());
+
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content").isEmpty());
+
+		jdbcTemplate.update(
+				"UPDATE account_sanctions SET expires_at = ? WHERE id = ?",
+				LocalDateTime.now().minusMinutes(1),
+				sanctionId
+		);
+
+		mockMvc.perform(source.owner().authorize(get("/api/recommendations")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content[0].profile.displayName")
+						.value("Expired Sanction Candidate"));
 	}
 
 	@Test

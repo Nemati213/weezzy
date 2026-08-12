@@ -49,4 +49,5 @@ dependencies {
 
 tasks.withType<Test> {
 	useJUnitPlatform()
+	systemProperty("app.security.access-token-revocation.enabled", "false")
 }

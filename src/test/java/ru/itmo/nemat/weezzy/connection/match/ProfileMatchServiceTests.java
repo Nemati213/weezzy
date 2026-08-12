@@ -24,6 +24,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 
 @ExtendWith(MockitoExtension.class)
 class ProfileMatchServiceTests {
@@ -59,11 +61,10 @@ class ProfileMatchServiceTests {
 				firstMatchedProfile.getId(),
 				secondMatchedProfile.getId()
 		);
-		when(matchRepository
-				.findByFirstProfileIdOrSecondProfileIdOrderByCreatedAtDesc(
-						sourceProfileId,
-						sourceProfileId
-				))
+		when(matchRepository.findVisibleByProfileId(
+				eq(sourceProfileId),
+				any()
+		))
 				.thenReturn(matches);
 		when(profileService.findAllByIds(matchedProfileIds))
 				.thenReturn(List.of(firstMatchedProfile, secondMatchedProfile));

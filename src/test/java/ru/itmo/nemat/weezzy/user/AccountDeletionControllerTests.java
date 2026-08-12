@@ -11,6 +11,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
@@ -68,7 +69,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @Testcontainers
-@SpringBootTest
+@SpringBootTest(properties = "app.security.access-token-revocation.enabled=true")
 @AutoConfigureMockMvc
 class AccountDeletionControllerTests {
 	private static final DockerImageName POSTGRES_IMAGE =
@@ -81,6 +82,10 @@ class AccountDeletionControllerTests {
 			.withDatabaseName("weezzy")
 			.withUsername("weezzy")
 			.withPassword("weezzy_dev_password");
+
+	@Container
+	static final GenericContainer<?> redis = new GenericContainer<>("redis:8-alpine")
+			.withExposedPorts(6379);
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -132,6 +137,8 @@ class AccountDeletionControllerTests {
 		registry.add("spring.datasource.url", postgres::getJdbcUrl);
 		registry.add("spring.datasource.username", postgres::getUsername);
 		registry.add("spring.datasource.password", postgres::getPassword);
+		registry.add("spring.data.redis.host", redis::getHost);
+		registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
 	}
 
 	@Test
@@ -378,7 +385,8 @@ class AccountDeletionControllerTests {
 	private void assertOldTokensAreRejected(TestAccount deleted) throws Exception {
 		mockMvc.perform(get("/api/auth/me")
 					.header(HttpHeaders.AUTHORIZATION, bearer(deleted.accessToken())))
-				.andExpect(status().isUnauthorized());
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value("Access token has been revoked"));
 		mockMvc.perform(post("/api/auth/refresh")
 					.contentType(MediaType.APPLICATION_JSON)
 					.content(objectMapper.writeValueAsString(java.util.Map.of(
