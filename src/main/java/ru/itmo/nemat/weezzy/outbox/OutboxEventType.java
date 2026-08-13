@@ -1,0 +1,8 @@
+package ru.itmo.nemat.weezzy.outbox;
+
+public enum OutboxEventType {
+	PROFILE_LIKED,
+	MATCH_CREATED,
+	REPORT_DECIDED,
+	ACCOUNT_SANCTION_CREATED
+}

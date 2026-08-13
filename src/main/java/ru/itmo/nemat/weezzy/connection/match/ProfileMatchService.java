@@ -12,6 +12,8 @@ import ru.itmo.nemat.weezzy.connection.event.ProfileInteractionEventType;
 import ru.itmo.nemat.weezzy.connection.match.dto.ProfileMatchResponse;
 import ru.itmo.nemat.weezzy.connection.vote.ProfileVoteAction;
 import ru.itmo.nemat.weezzy.connection.vote.ProfileVoteRepository;
+import ru.itmo.nemat.weezzy.outbox.OutboxEventService;
+import ru.itmo.nemat.weezzy.outbox.payload.MatchCreatedPayload;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 import ru.itmo.nemat.weezzy.profile.photo.ProfilePhotoService;
@@ -36,6 +38,7 @@ public class ProfileMatchService {
 	private final MatchCursorCodec cursorCodec;
 	private final ProfileInteractionEventService interactionEventService;
 	private final ProfilePhotoService profilePhotoService;
+	private final OutboxEventService outboxEventService;
 
 	@Transactional
 	public ProfileMatch create(UUID firstProfileId, UUID secondProfileId) {
@@ -204,6 +207,14 @@ public class ProfileMatchService {
 				targetProfileId,
 				ProfileInteractionEventType.MATCH
 		);
+
+		outboxEventService.publish(new MatchCreatedPayload(
+				sourceProfileId,
+				profileService.findOwnerUserId(sourceProfileId),
+				targetProfileId,
+				profileService.findOwnerUserId(targetProfileId)
+		));
+
 		return savedMatch;
 	}
 

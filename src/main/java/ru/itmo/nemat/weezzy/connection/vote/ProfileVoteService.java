@@ -11,6 +11,8 @@ import ru.itmo.nemat.weezzy.connection.event.ProfileInteractionEventService;
 import ru.itmo.nemat.weezzy.connection.event.ProfileInteractionEventType;
 import ru.itmo.nemat.weezzy.connection.match.ProfileMatchService;
 import ru.itmo.nemat.weezzy.connection.vote.dto.VoteResponse;
+import ru.itmo.nemat.weezzy.outbox.OutboxEventService;
+import ru.itmo.nemat.weezzy.outbox.payload.ProfileLikedPayload;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 import ru.itmo.nemat.weezzy.profile.ProfileStatus;
@@ -30,6 +32,7 @@ public class ProfileVoteService {
 	private final ProfilePairLockService pairLockService;
 	private final VoteCursorCodec cursorCodec;
 	private final ProfileInteractionEventService interactionEventService;
+	private final OutboxEventService outboxEventService;
 
 	@Transactional
 	public ProfileVote vote(
@@ -56,6 +59,11 @@ public class ProfileVoteService {
 					profileVote.setTargetProfileId(targetProfileId);
 					return profileVote;
 				});
+
+		ProfileVoteAction previousAction = vote.getAction();
+		boolean becameLike = action == ProfileVoteAction.LIKE
+				&& previousAction != ProfileVoteAction.LIKE;
+
 		vote.setAction(action);
 
 		ProfileVote savedVote = repository.save(vote);
@@ -69,11 +77,17 @@ public class ProfileVoteService {
 		if (action == ProfileVoteAction.LIKE) {
 			repository.findBySourceProfileIdAndTargetProfileId(targetProfileId, sourceProfileId)
 					.filter(reciprocalVote -> reciprocalVote.getAction() == ProfileVoteAction.LIKE)
-					.ifPresent(reciprocalVote -> matchService.create(sourceProfileId, targetProfileId));
+					.ifPresentOrElse(
+							reciprocalVote -> matchService.create(sourceProfileId, targetProfileId),
+							() -> publishLikeIfNeeded(
+									sourceProfileId,
+									targetProfileId,
+									becameLike
+							)
+					);
 		} else {
 			matchService.deleteIfExists(sourceProfileId, targetProfileId);
 		}
-
 		return savedVote;
 	}
 
@@ -144,5 +158,21 @@ public class ProfileVoteService {
 				.filter(profile -> profile.getStatus() == ProfileStatus.DELETED)
 				.map(Profile::getId)
 				.collect(Collectors.toSet());
+	}
+
+	private void publishLikeIfNeeded(
+			UUID sourceProfileId,
+			UUID targetProfileId,
+			boolean becameLike
+	) {
+		if (!becameLike) {
+			return;
+		}
+
+		outboxEventService.publish(new ProfileLikedPayload(
+				sourceProfileId,
+				targetProfileId,
+				profileService.findOwnerUserId(targetProfileId)
+		));
 	}
 }

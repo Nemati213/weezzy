@@ -56,6 +56,9 @@ public interface ProfileRepository extends JpaRepository<Profile, UUID> {
 	boolean existsByUserId(UUID userId);
 	Optional<Profile> findByUserId(UUID userId);
 
+	@Query("SELECT profile.user.id FROM Profile profile WHERE profile.id = :profileId")
+	Optional<UUID> findOwnerUserId(@Param("profileId") UUID profileId);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("""
 			SELECT profile
