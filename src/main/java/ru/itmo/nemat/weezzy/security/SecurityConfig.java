@@ -45,7 +45,9 @@ public class SecurityConfig {
 								HttpMethod.POST,
 								"/api/skills",
 								"/api/interests",
-								"/api/goals"
+								"/api/goals",
+								"/api/universities",
+								"/api/locations"
 						)
 						.hasRole("ADMIN")
 						.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
