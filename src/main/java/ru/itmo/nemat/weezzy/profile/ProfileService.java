@@ -89,9 +89,8 @@ public class ProfileService {
 	}
 
 	@Transactional(readOnly = true)
-	public UUID findOwnerUserId(UUID profileId) {
-		return profileRepository.findOwnerUserId(profileId)
-				.orElseThrow(() -> new ProfileNotFoundException(profileId));
+	public Optional<UUID> findOptionalOwnerUserId(UUID profileId) {
+		return profileRepository.findOwnerUserId(profileId);
 	}
 
 	@Transactional(readOnly = true)

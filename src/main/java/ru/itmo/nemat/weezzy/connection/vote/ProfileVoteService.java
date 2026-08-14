@@ -146,6 +146,15 @@ public class ProfileVoteService {
 				.collect(Collectors.toSet());
 	}
 
+	@Transactional(readOnly = true)
+	public boolean existsLike(UUID sourceProfileId, UUID targetProfileId) {
+		return repository.existsBySourceProfileIdAndTargetProfileIdAndAction(
+				sourceProfileId,
+				targetProfileId,
+				ProfileVoteAction.LIKE
+		);
+	}
+
 	private VoteCursor toCursor(ProfileVote vote) {
 		return new VoteCursor(vote.getCreatedAt(), vote.getTargetProfileId());
 	}
@@ -169,10 +178,13 @@ public class ProfileVoteService {
 			return;
 		}
 
-		outboxEventService.publish(new ProfileLikedPayload(
-				sourceProfileId,
-				targetProfileId,
-				profileService.findOwnerUserId(targetProfileId)
-		));
+		profileService.findOptionalOwnerUserId(targetProfileId)
+				.ifPresent(recipientUserId -> outboxEventService.publish(
+						new ProfileLikedPayload(
+								sourceProfileId,
+								targetProfileId,
+								recipientUserId
+						)
+				));
 	}
 }

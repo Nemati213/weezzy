@@ -22,6 +22,7 @@ import ru.itmo.nemat.weezzy.profile.photo.dto.ProfilePhotoResponse;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -208,12 +209,18 @@ public class ProfileMatchService {
 				ProfileInteractionEventType.MATCH
 		);
 
-		outboxEventService.publish(new MatchCreatedPayload(
-				sourceProfileId,
-				profileService.findOwnerUserId(sourceProfileId),
-				targetProfileId,
-				profileService.findOwnerUserId(targetProfileId)
-		));
+		Optional<UUID> sourceUserId =
+				profileService.findOptionalOwnerUserId(sourceProfileId);
+		Optional<UUID> targetUserId =
+				profileService.findOptionalOwnerUserId(targetProfileId);
+		if (sourceUserId.isPresent() && targetUserId.isPresent()) {
+			outboxEventService.publish(new MatchCreatedPayload(
+					sourceProfileId,
+					sourceUserId.get(),
+					targetProfileId,
+					targetUserId.get()
+			));
+		}
 
 		return savedMatch;
 	}

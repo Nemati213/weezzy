@@ -1,13 +1,14 @@
 package ru.itmo.nemat.weezzy.outbox.payload;
 
+import jakarta.validation.constraints.NotNull;
 import ru.itmo.nemat.weezzy.outbox.OutboxEventType;
 
 import java.util.UUID;
 
 public record ProfileLikedPayload(
-		UUID sourceProfileId,
-		UUID targetProfileId,
-		UUID recipientUserId
+		@NotNull UUID sourceProfileId,
+		@NotNull UUID targetProfileId,
+		@NotNull UUID recipientUserId
 ) implements OutboxPayload {
 	@Override
 	public OutboxEventType eventType() {

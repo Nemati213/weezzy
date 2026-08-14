@@ -8,7 +8,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -26,6 +25,8 @@ import java.util.UUID;
 @Setter
 @NoArgsConstructor
 public class OutboxEvent {
+	public static final int LAST_ERROR_MAX_LENGTH = 2000;
+
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)
 	private UUID id;
@@ -53,7 +54,7 @@ public class OutboxEvent {
 	@Column(length = 100)
 	private String lockedBy;
 
-	@Column(length = 2000)
+	@Column(length = LAST_ERROR_MAX_LENGTH)
 	private String lastError;
 
 	@Column(nullable = false, updatable = false)
@@ -74,8 +75,43 @@ public class OutboxEvent {
 		}
 	}
 
-	@PreUpdate
-	void onUpdate() {
-		updatedAt = LocalDateTime.now();
+	public void claim(String workerId, LocalDateTime now) {
+		status = OutboxEventStatus.PROCESSING;
+		attemptCount++;
+		lockedAt = now;
+		lockedBy = workerId;
+		updatedAt = now;
+	}
+
+	public void markProcessed(LocalDateTime now) {
+		status = OutboxEventStatus.PROCESSED;
+		processedAt = now;
+		lastError = null;
+		clearLock();
+		updatedAt = now;
+	}
+
+	public void scheduleRetry(
+			String error,
+			LocalDateTime nextAttemptAt,
+			LocalDateTime now
+	) {
+		status = OutboxEventStatus.PENDING;
+		lastError = error;
+		this.nextAttemptAt = nextAttemptAt;
+		clearLock();
+		updatedAt = now;
+	}
+
+	public void markFailed(String error, LocalDateTime now) {
+		status = OutboxEventStatus.FAILED;
+		lastError = error;
+		clearLock();
+		updatedAt = now;
+	}
+
+	private void clearLock() {
+		lockedAt = null;
+		lockedBy = null;
 	}
 }

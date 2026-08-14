@@ -25,6 +25,24 @@ app:
       interest: 2
       goal: 5
     impression-cooldown: 7d
+  outbox:
+    worker:
+      enabled: ${OUTBOX_WORKER_ENABLED:true}
+      fixed-delay: ${OUTBOX_WORKER_FIXED_DELAY:PT1S}
+      batch-size: ${OUTBOX_WORKER_BATCH_SIZE:50}
+      max-attempts: ${OUTBOX_WORKER_MAX_ATTEMPTS:5}
+      lock-timeout: ${OUTBOX_WORKER_LOCK_TIMEOUT:PT5M}
+      retry-delays:
+        - ${OUTBOX_RETRY_DELAY_1:PT1M}
+        - ${OUTBOX_RETRY_DELAY_2:PT5M}
+        - ${OUTBOX_RETRY_DELAY_3:PT15M}
+        - ${OUTBOX_RETRY_DELAY_4:PT1H}
+      worker-id: ${OUTBOX_WORKER_ID:}
+    cleanup:
+      enabled: ${OUTBOX_CLEANUP_ENABLED:true}
+      fixed-delay: ${OUTBOX_CLEANUP_FIXED_DELAY:PT1H}
+      retention: ${OUTBOX_PROCESSED_RETENTION:P7D}
+      batch-size: ${OUTBOX_CLEANUP_BATCH_SIZE:500}
   security:
     access-token-revocation:
       enabled: ${ACCESS_TOKEN_REVOCATION_ENABLED:true}

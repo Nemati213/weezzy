@@ -50,4 +50,6 @@ dependencies {
 tasks.withType<Test> {
 	useJUnitPlatform()
 	systemProperty("app.security.access-token-revocation.enabled", "false")
+	systemProperty("app.outbox.worker.enabled", "false")
+	systemProperty("app.outbox.cleanup.enabled", "false")
 }

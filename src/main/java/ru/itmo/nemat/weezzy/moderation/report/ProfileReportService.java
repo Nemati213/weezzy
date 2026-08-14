@@ -7,12 +7,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.nemat.weezzy.connection.ProfilePairLockService;
 import ru.itmo.nemat.weezzy.moderation.report.dto.CreateProfileReportRequest;
+import ru.itmo.nemat.weezzy.outbox.OutboxEventService;
+import ru.itmo.nemat.weezzy.outbox.payload.ProfileReportDecidedPayload;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 import ru.itmo.nemat.weezzy.user.User;
 import ru.itmo.nemat.weezzy.user.UserService;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -33,6 +36,7 @@ public class ProfileReportService {
 	private final ProfileService profileService;
 	private final ProfilePairLockService pairLockService;
 	private final UserService userService;
+	private final OutboxEventService outboxEventService;
 
 	@Transactional
 	public ProfileReport create(
@@ -59,6 +63,27 @@ public class ProfileReportService {
 	public ProfileReport findById(UUID profileReportId) {
 		return reportRepository.findById(profileReportId)
 				.orElseThrow(() -> new ProfileReportNotFoundException(profileReportId));
+	}
+
+	@Transactional(readOnly = true)
+	public boolean hasMatchingDecision(
+			UUID reportId,
+			UUID recipientUserId,
+			UUID targetProfileId,
+			ProfileReportStatus status,
+			String decision
+	) {
+		return reportRepository.findById(reportId)
+				.filter(report -> report.getStatus() == status)
+				.filter(report -> Objects.equals(report.getDecision(), decision))
+				.filter(report -> report.getTargetProfile().getId().equals(
+						targetProfileId
+				))
+				.map(ProfileReport::getReporterProfile)
+				.map(Profile::getUser)
+				.map(User::getId)
+				.filter(recipientUserId::equals)
+				.isPresent();
 	}
 
 	@Transactional(readOnly = true)
@@ -101,7 +126,14 @@ public class ProfileReportService {
 		ProfileReport report = findByIdForUpdate(profileReportId);
 		ensureOpen(report);
 
-		return applyDecision(report, moderator, finalStatus, decision);
+		ProfileReport decidedReport = applyDecision(
+				report,
+				moderator,
+				finalStatus,
+				decision
+		);
+		publishDecision(decidedReport);
+		return decidedReport;
 	}
 
 	private void validateFinalStatus(ProfileReportStatus finalStatus) {
@@ -149,6 +181,20 @@ public class ProfileReportService {
 		report.setClosedAt(now);
 
 		return reportRepository.save(report);
+	}
+
+	private void publishDecision(ProfileReport report) {
+		UUID reporterProfileId = report.getReporterProfile().getId();
+		profileService.findOptionalOwnerUserId(reporterProfileId)
+				.ifPresent(recipientUserId -> outboxEventService.publish(
+						new ProfileReportDecidedPayload(
+								report.getId(),
+								recipientUserId,
+								report.getTargetProfile().getId(),
+								report.getStatus(),
+								report.getDecision()
+						)
+				));
 	}
 
 	private void validateRequest(CreateProfileReportRequest request) {

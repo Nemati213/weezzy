@@ -10,6 +10,9 @@ import ru.itmo.nemat.weezzy.moderation.report.ProfileReportService;
 import ru.itmo.nemat.weezzy.moderation.report.ProfileReportStatus;
 import ru.itmo.nemat.weezzy.moderation.sanction.dto.CreateAccountSanctionRequest;
 import ru.itmo.nemat.weezzy.moderation.sanction.dto.RevokeAccountSanctionRequest;
+import ru.itmo.nemat.weezzy.outbox.OutboxEventService;
+import ru.itmo.nemat.weezzy.outbox.payload.AccountSanctionCreatedPayload;
+import ru.itmo.nemat.weezzy.outbox.payload.AccountSanctionRevokedPayload;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 import ru.itmo.nemat.weezzy.security.session.AuthSessionService;
@@ -35,6 +38,7 @@ public class AccountSanctionService {
 	private final ProfileReportService reportService;
 	private final AuthSessionService authSessionService;
 	private final AccessTokenRevocationService accessTokenRevocationService;
+	private final OutboxEventService outboxEventService;
 
 	@Transactional
 	public AccountSanction create(
@@ -78,6 +82,14 @@ public class AccountSanctionService {
 				targetUserId,
 				AccessTokenRevocationReason.ACCOUNT_SANCTION
 		);
+		outboxEventService.publish(new AccountSanctionCreatedPayload(
+				saved.getId(),
+				targetUserId,
+				saved.getType(),
+				saved.getReason(),
+				saved.getExpiresAt(),
+				saved.getSourceReportId()
+		));
 
 		return saved;
 	}
@@ -87,6 +99,38 @@ public class AccountSanctionService {
 		expireTemporarySanctions(LocalDateTime.now());
 		return sanctionRepository.findById(sanctionId)
 				.orElseThrow(() -> new AccountSanctionNotFoundException(sanctionId));
+	}
+
+	@Transactional
+	public boolean isEffective(UUID sanctionId, UUID targetUserId) {
+		Optional<AccountSanction> sanction = sanctionRepository.findByIdForUpdate(
+				sanctionId
+		);
+		if (sanction.isEmpty()
+				|| !sanction.get().getTargetUserId().equals(targetUserId)) {
+			return false;
+		}
+
+		expireIfNecessary(sanction.get(), LocalDateTime.now());
+		return sanction.get().getStatus() == AccountSanctionStatus.ACTIVE;
+	}
+
+	@Transactional(readOnly = true)
+	public boolean hasMatchingRevocation(
+			UUID sanctionId,
+			UUID targetUserId,
+			AccountSanctionType type,
+			String revocationReason
+	) {
+		return sanctionRepository.findById(sanctionId)
+				.filter(sanction -> sanction.getStatus()
+						== AccountSanctionStatus.REVOKED)
+				.filter(sanction -> sanction.getTargetUserId().equals(targetUserId))
+				.filter(sanction -> sanction.getType() == type)
+				.filter(sanction -> sanction.getRevocationReason().equals(
+						revocationReason
+				))
+				.isPresent();
 	}
 
 	@Transactional
@@ -138,11 +182,21 @@ public class AccountSanctionService {
 			);
 		}
 
+		LocalDateTime revokedAt = LocalDateTime.now();
+		String revocationReason = request.reason().trim();
 		sanction.setStatus(AccountSanctionStatus.REVOKED);
-		sanction.setRevokedAt(LocalDateTime.now());
+		sanction.setRevokedAt(revokedAt);
 		sanction.setRevokedByUserId(moderator.getId());
-		sanction.setRevocationReason(request.reason().trim());
-		return sanctionRepository.save(sanction);
+		sanction.setRevocationReason(revocationReason);
+		AccountSanction saved = sanctionRepository.save(sanction);
+		outboxEventService.publish(new AccountSanctionRevokedPayload(
+				saved.getId(),
+				saved.getTargetUserId(),
+				saved.getType(),
+				revocationReason,
+				revokedAt
+		));
+		return saved;
 	}
 
 	private void validateExpiration(

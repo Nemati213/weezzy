@@ -45,4 +45,9 @@ public interface ProfileVoteRepository extends JpaRepository<ProfileVote, Profil
 			@Param("targetProfileId") UUID targetProfileId,
 			Pageable pageable
 	);
+	boolean existsBySourceProfileIdAndTargetProfileIdAndAction(
+			UUID sourceProfileId,
+			UUID targetProfileId,
+			ProfileVoteAction action
+	);
 }
