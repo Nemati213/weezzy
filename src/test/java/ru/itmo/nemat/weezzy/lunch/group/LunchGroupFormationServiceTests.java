@@ -52,7 +52,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers
-@SpringBootTest
+@SpringBootTest(properties = "app.lunch.matching.enabled=false")
 class LunchGroupFormationServiceTests {
 	private static final DockerImageName POSTGRES_IMAGE =
 			DockerImageName.parse("pgvector/pgvector:pg17")
@@ -194,6 +194,45 @@ class LunchGroupFormationServiceTests {
 		))).extracting(LunchRequest::getStatus)
 				.containsOnly(LunchRequestStatus.SEARCHING);
 		assertThat(formationEventCount()).isEqualTo(formationEventsBefore);
+	}
+
+	@Test
+	void activeGroupPreventsAProfileFromJoiningAnotherGroup() {
+		Participant first = createParticipant("First", location, slot());
+		Participant second = createParticipant("Second", location, slot());
+		LunchRequest previousRequest = new LunchRequest();
+		previousRequest.setProfile(first.profile());
+		previousRequest.setLocation(location);
+		previousRequest.setStatus(LunchRequestStatus.MATCHED);
+		previousRequest.setTopic(LunchTopic.STUDY);
+		previousRequest.setTimeSlot(slot().minusDays(1));
+		previousRequest = requestRepository.saveAndFlush(previousRequest);
+		LunchGroup activeGroup = new LunchGroup();
+		activeGroup.setLocation(location);
+		activeGroup.setTimeSlot(previousRequest.getTimeSlot());
+		activeGroup.setTopic(LunchTopic.STUDY);
+		activeGroup = groupRepository.saveAndFlush(activeGroup);
+		LunchGroupMember member = new LunchGroupMember();
+		member.setId(new LunchGroupMemberId(
+				activeGroup.getId(),
+				first.profile().getId()
+		));
+		member.setGroup(activeGroup);
+		member.setProfile(first.profile());
+		member.setLunchRequest(previousRequest);
+		memberRepository.saveAndFlush(member);
+
+		assertThatThrownBy(() -> formationService.formGroup(
+				List.of(first.request().getId(), second.request().getId()),
+				LunchTopic.STUDY
+		)).isInstanceOf(LunchGroupFormationConflictException.class)
+				.hasMessageContaining("active group");
+
+		assertThat(requestRepository.findAllById(List.of(
+				first.request().getId(),
+				second.request().getId()
+		))).extracting(LunchRequest::getStatus)
+				.containsOnly(LunchRequestStatus.SEARCHING);
 	}
 
 	@Test

@@ -1,5 +1,6 @@
 package ru.itmo.nemat.weezzy.lunch.config;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -19,8 +20,22 @@ public record LunchProperties(
 		@NotNull Duration slotInterval,
 		@NotNull Duration extensionDuration,
 		@Min(0) int maxExtensions,
-		@NotNull Duration extensionResponseTimeout
+		@NotNull Duration extensionResponseTimeout,
+		@Valid @NotNull Matching matching
 ) {
+	public record Matching(
+			boolean enabled,
+			@NotNull Duration fixedDelay,
+			@Min(1) int bucketBatchSize
+	) {
+		@AssertTrue(message = "lunch matching fixed delay must be positive")
+		public boolean hasPositiveFixedDelay() {
+			return fixedDelay != null
+					&& !fixedDelay.isZero()
+					&& !fixedDelay.isNegative();
+		}
+	}
+
 	@AssertTrue(message = "lunch time window and durations must be valid")
 	public boolean hasValidTimeConfiguration() {
 		return windowStart != null

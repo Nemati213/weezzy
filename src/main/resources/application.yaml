@@ -19,6 +19,10 @@ app:
     extension-duration: ${LUNCH_EXTENSION_DURATION:PT10M}
     max-extensions: ${LUNCH_MAX_EXTENSIONS:2}
     extension-response-timeout: ${LUNCH_EXTENSION_RESPONSE_TIMEOUT:PT5M}
+    matching:
+      enabled: ${LUNCH_MATCHING_ENABLED:true}
+      fixed-delay: ${LUNCH_MATCHING_FIXED_DELAY:PT1M}
+      bucket-batch-size: ${LUNCH_MATCHING_BUCKET_BATCH_SIZE:50}
   profile-photo:
     max-file-size: ${PROFILE_PHOTO_MAX_FILE_SIZE:10485760}
     max-photos: ${PROFILE_PHOTO_MAX_COUNT:6}

@@ -116,6 +116,7 @@ public class LunchGroupFormationService {
 		ensureAllSearching(lockedRequests);
 		ensureProfilesEligible(lockedProfiles);
 		ensureNoEffectiveSanctions(userIds);
+		ensureNoActiveGroups(profileIds);
 		ensureSameBucket(lockedRequests);
 		ensureNoBlocks(profileIds);
 
@@ -224,6 +225,17 @@ public class LunchGroupFormationService {
 		if (!accountAccessService.findRestrictedUserIds(userIds).isEmpty()) {
 			throw new LunchGroupFormationConflictException(
 					"one or more candidate users have an active sanction"
+			);
+		}
+	}
+
+	private void ensureNoActiveGroups(List<UUID> profileIds) {
+		if (!memberRepository.findProfileIdsByGroupStatus(
+				profileIds,
+				LunchGroupStatus.ACTIVE
+		).isEmpty()) {
+			throw new LunchGroupFormationConflictException(
+					"one or more candidate profiles already have an active group"
 			);
 		}
 	}

@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public interface LunchGroupMemberRepository
@@ -39,6 +40,17 @@ public interface LunchGroupMemberRepository
 			""")
 	Optional<LunchGroup> findGroupByProfileIdAndStatus(
 			@Param("profileId") UUID profileId,
+			@Param("status") LunchGroupStatus status
+	);
+
+	@Query("""
+			SELECT DISTINCT member.profile.id
+			FROM LunchGroupMember member
+			WHERE member.profile.id IN :profileIds
+			  AND member.group.status = :status
+			""")
+	Set<UUID> findProfileIdsByGroupStatus(
+			@Param("profileIds") Collection<UUID> profileIds,
 			@Param("status") LunchGroupStatus status
 	);
 }
