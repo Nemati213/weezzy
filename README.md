@@ -30,6 +30,12 @@ Weezzy — backend внутреннего ITMO-сервиса для нетво�
 - фильтры, cursor pagination, cooldown показов и объяснение score;
 - голоса `LIKE`/`PASS`, взаимные matches, unmatch и blocks;
 - Telegram скрыт до match;
+- жалобы на профили, административная модерация и временные/постоянные санкции;
+- in-app уведомления с unread state и cursor pagination;
+- transactional outbox с retry, backoff, stale-lock recovery и cleanup;
+- университеты, активные локации и ежедневные заявки на экспресс-обед;
+- конкурентный matching экспресс-обедов по точной локации и временному слоту;
+- группы из 3–4 участников, аварийные пары, продления и lifecycle групп;
 - page pagination для профилей/каталогов и cursor pagination для динамических списков;
 - interaction events для impressions, votes, matches и blocks;
 - Actuator health/liveness/readiness, Micrometer metrics и Prometheus;
@@ -172,6 +178,25 @@ S3_API_CALL_TIMEOUT=PT15S
 PROFILE_PHOTO_MAX_FILE_SIZE=10485760
 PROFILE_PHOTO_MAX_COUNT=6
 PROFILE_PHOTO_PENDING_TTL=P1D
+LUNCH_ZONE_ID=Europe/Moscow
+LUNCH_WINDOW_START=12:00
+LUNCH_WINDOW_END=15:00
+LUNCH_SLOT_INTERVAL=PT15M
+LUNCH_EXTENSION_DURATION=PT10M
+LUNCH_EXTENSION_RESPONSE_TIMEOUT=PT5M
+LUNCH_MAX_EXTENSIONS=2
+LUNCH_GROUP_DURATION=PT1H
+LUNCH_MATCHING_ENABLED=true
+LUNCH_MATCHING_FIXED_DELAY=PT1M
+LUNCH_MATCHING_BUCKET_BATCH_SIZE=50
+LUNCH_LIFECYCLE_ENABLED=true
+LUNCH_LIFECYCLE_FIXED_DELAY=PT1M
+LUNCH_LIFECYCLE_BATCH_SIZE=100
+OUTBOX_WORKER_FIXED_DELAY=PT1S
+OUTBOX_WORKER_BATCH_SIZE=50
+OUTBOX_WORKER_MAX_ATTEMPTS=5
+OUTBOX_CLEANUP_FIXED_DELAY=PT1H
+OUTBOX_PROCESSED_RETENTION=P7D
 WEEZZY_VERSION=<release-version>
 ```
 
@@ -406,6 +431,78 @@ DELETE /api/blocks/{blockedProfileId}
 направлении удаляет match, закрывает профиль и запрещает vote/match; unblock не
 восстанавливает match автоматически.
 
+### Экспресс-обеды
+
+Справочники университетов и локаций:
+
+```text
+GET  /api/universities
+GET  /api/universities/{id}
+GET  /api/locations
+GET  /api/locations/{id}
+POST /api/universities      ADMIN
+POST /api/locations         ADMIN
+```
+
+Пользовательские endpoints:
+
+| Метод | Endpoint | Назначение |
+|---|---|---|
+| `POST` | `/api/lunch/requests` | Создать одиночную заявку |
+| `GET` | `/api/lunch/requests/me` | Получить активную заявку |
+| `DELETE` | `/api/lunch/requests/me` | Отменить заявку до формирования группы |
+| `POST` | `/api/lunch/requests/me/extend` | Принять предложение продления |
+| `GET` | `/api/lunch/groups/me` | Получить активную группу и участников |
+
+Пример создания заявки:
+
+```json
+{
+  "locationId": "00000000-0000-0000-0000-000000000000",
+  "time": "IN_30_MINUTES",
+  "topic": "NETWORKING",
+  "comment": "Хочу обсудить backend"
+}
+```
+
+Допустимое время: `NOW`, `IN_30_MINUTES`, `IN_1_HOUR`. Темы:
+`CASUAL_CHAT`, `STUDY`, `STARTUPS`, `IT_CAREER`, `NETWORKING`.
+
+Окно по умолчанию — `12:00–15:00` в `Europe/Moscow`, шаг слотов — 15 минут.
+Matching использует точное совпадение `location + timeSlot`: сначала группы 3–4
+с общей темой, затем смешанные группы, а менее чем за 5 минут — аварийные пары.
+Соседний слот используется только после подтверждённого продления.
+
+При формировании, предложении продления и системной отмене уведомления создаются
+через transactional outbox. Невалидная группа отменяется до начала обеда;
+eligible-заявки возвращаются в поиск. Активная группа автоматически завершается
+через `LUNCH_GROUP_DURATION`. Ответ группы не раскрывает Telegram.
+
+### Уведомления и модерация
+
+```text
+GET   /api/notifications/me
+PATCH /api/notifications/me/{notificationId}/read
+PATCH /api/notifications/me/read-all
+
+POST  /api/reports/{targetProfileId}
+
+GET   /api/admin/reports
+GET   /api/admin/reports/{reportId}
+PATCH /api/admin/reports/{reportId}/review
+PATCH /api/admin/reports/{reportId}/decision
+
+POST  /api/admin/users/{targetUserId}/sanctions
+GET   /api/admin/sanctions
+GET   /api/admin/sanctions/{sanctionId}
+GET   /api/admin/users/{targetUserId}/sanctions
+PATCH /api/admin/sanctions/{sanctionId}/revoke
+```
+
+Пользовательские уведомления включают LIKE, match, решения по жалобам, санкции,
+формирование lunch-группы, предложение продления и системную отмену группы.
+Доставка идемпотентна; outbox worker поддерживает retry и восстановление stale locks.
+
 ## Pagination
 
 Profiles, skills, interests, goals и административные очереди используют обычную
@@ -487,7 +584,8 @@ src/main/resources/db/migration
 
 Тесты используют Testcontainers PostgreSQL и Redis. Docker Desktop должен быть
 запущен. Текущий suite покрывает HTTP API, security, onboarding, pagination,
-privacy/match lifecycle, concurrency, recommendation ranking и rate limiting.
+privacy/match lifecycle, moderation, outbox, lunch matching/lifecycle,
+concurrency, recommendation ranking и rate limiting.
 
 ## CI
 
@@ -507,11 +605,17 @@ src/main/java/ru/itmo/nemat/weezzy
 ├── connection      votes, matches, blocks и interaction events
 ├── goal            каталог goals
 ├── interest        каталог и suggestions interests
+├── location        университеты и локации встреч
+├── lunch           заявки, matching, группы и lifecycle экспресс-обедов
+├── moderation      жалобы и санкции
+├── notification    in-app уведомления
 ├── onboarding      прогресс и правила активации профиля
+├── outbox          transactional outbox, delivery и cleanup
 ├── profile         профиль и его signals
 ├── recommendation  ranking, filters, cursor и impressions
 ├── security        JWT, security errors и Redis rate limit
 ├── skill           каталог и suggestions skills
+├── storage         S3-compatible object storage
 └── user            пользователи, роли и auth
 ```
 
@@ -521,5 +625,7 @@ authenticated principal, бизнес-логика находится в service
 
 ## Ближайший roadmap
 
-- reports, moderation и блокировка аккаунтов;
-- notifications и transactional outbox.
+- временный REST-чат внутри активной lunch-группы;
+- взаимное действие «Хочу остаться на связи» без создания обычного match;
+- финальные интеграционные тесты и метрики экспресс-обедов;
+- privacy-safe fingerprint удалённого email против повторной регистрации.
