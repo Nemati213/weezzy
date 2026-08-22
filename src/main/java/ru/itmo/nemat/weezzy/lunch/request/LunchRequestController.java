@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import ru.itmo.nemat.weezzy.lunch.request.dto.AcceptLunchExtensionRequest;
 import ru.itmo.nemat.weezzy.lunch.request.dto.CreateLunchRequest;
 import ru.itmo.nemat.weezzy.lunch.request.dto.LunchRequestResponse;
 import ru.itmo.nemat.weezzy.security.JwtAuthenticatedUser;
@@ -52,10 +53,11 @@ public class LunchRequestController {
 
 	@PostMapping("/me/extend")
 	public ResponseEntity<LunchRequestResponse> extend(
-			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser
+			@AuthenticationPrincipal JwtAuthenticatedUser authenticatedUser,
+			@Valid @RequestBody AcceptLunchExtensionRequest request
 	) {
 		return ResponseEntity.ok(LunchRequestResponse.from(
-				service.extendCurrent(authenticatedUser.id())
+				service.extendCurrent(authenticatedUser.id(), request.offerId())
 		));
 	}
 }

@@ -65,6 +65,15 @@ public class LunchRequest {
 	@Column(name = "extension_count", nullable = false)
 	private int extensionCount;
 
+	@Column(name = "extension_offer_id")
+	private UUID extensionOfferId;
+
+	@Column(name = "extension_expires_at")
+	private LocalDateTime extensionExpiresAt;
+
+	@Column(name = "extension_target_time_slot")
+	private LocalDateTime extensionTargetTimeSlot;
+
 	@PreUpdate
 	void onUpdate() {
 		this.updatedAt = LocalDateTime.now();

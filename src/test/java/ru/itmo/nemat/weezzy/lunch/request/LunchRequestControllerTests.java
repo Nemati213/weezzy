@@ -251,27 +251,38 @@ class LunchRequestControllerTests {
 	void extendIsIdempotentAndEnforcesConfiguredLimit() throws Exception {
 		LunchRequest request = findRequest(createRequest("NOW", "STUDY", null));
 
-		offerExtension(request, LocalDateTime.of(2026, 8, 14, 12, 15));
-		JsonNode firstExtension = responseFrom(extendRequest()
+		UUID firstOfferId = offerExtension(
+				request,
+				LocalDateTime.of(2026, 8, 14, 12, 15)
+		);
+		JsonNode firstExtension = responseFrom(extendRequest(firstOfferId)
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.timeSlot").value("2026-08-14T12:25:00"))
-				.andExpect(jsonPath("$.extensionCount").value(1)));
+				.andExpect(jsonPath("$.extensionCount").value(1))
+				.andExpect(jsonPath("$.extensionOfferId")
+						.value(firstOfferId.toString())));
 
-		extendRequest()
+		extendRequest(firstOfferId)
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.id").value(firstExtension.path("id").asText()))
 				.andExpect(jsonPath("$.extensionCount").value(1));
 
 		request = findRequest(firstExtension);
-		offerExtension(request, LocalDateTime.of(2026, 8, 14, 12, 25));
-		JsonNode secondExtension = responseFrom(extendRequest()
+		UUID secondOfferId = offerExtension(
+				request,
+				LocalDateTime.of(2026, 8, 14, 12, 25)
+		);
+		JsonNode secondExtension = responseFrom(extendRequest(secondOfferId)
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.timeSlot").value("2026-08-14T12:35:00"))
 				.andExpect(jsonPath("$.extensionCount").value(2)));
 
 		request = findRequest(secondExtension);
-		offerExtension(request, LocalDateTime.of(2026, 8, 14, 12, 35));
-		extendRequest()
+		UUID thirdOfferId = offerExtension(
+				request,
+				LocalDateTime.of(2026, 8, 14, 12, 35)
+		);
+		extendRequest(thirdOfferId)
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.message", containsString("extension limit: 2")));
 	}
@@ -279,12 +290,80 @@ class LunchRequestControllerTests {
 	@Test
 	void extendRejectsExpiredOffer() throws Exception {
 		LunchRequest request = findRequest(createRequest("NOW", "STUDY", null));
-		offerExtension(request, LocalDateTime.of(2026, 8, 14, 12, 15));
+		UUID offerId = offerExtension(
+				request,
+				LocalDateTime.of(2026, 8, 14, 12, 15)
+		);
 		clock.setLocalDateTime(LocalDateTime.of(2026, 8, 14, 12, 20));
 
-		extendRequest()
+		extendRequest(offerId)
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.message", containsString("offer has expired")));
+	}
+
+	@Test
+	void acceptedOfferRemainsIdempotentAfterItsDeadline() throws Exception {
+		LunchRequest request = findRequest(createRequest("NOW", "STUDY", null));
+		UUID offerId = offerExtension(
+				request,
+				LocalDateTime.of(2026, 8, 14, 12, 15)
+		);
+
+		extendRequest(offerId)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.extensionCount").value(1));
+		clock.setLocalDateTime(LocalDateTime.of(2026, 8, 14, 12, 30));
+
+		extendRequest(offerId)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.timeSlot").value("2026-08-14T12:25:00"))
+				.andExpect(jsonPath("$.extensionCount").value(1));
+	}
+
+	@Test
+	void staleOfferCannotAcceptANewerOffer() throws Exception {
+		LunchRequest request = findRequest(createRequest("NOW", "STUDY", null));
+		UUID firstOfferId = offerExtension(
+				request,
+				LocalDateTime.of(2026, 8, 14, 12, 15)
+		);
+		JsonNode firstExtension = responseFrom(extendRequest(firstOfferId)
+				.andExpect(status().isOk()));
+
+		request = findRequest(firstExtension);
+		UUID secondOfferId = offerExtension(
+				request,
+				LocalDateTime.of(2026, 8, 14, 12, 25)
+		);
+
+		extendRequest(firstOfferId)
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath(
+						"$.message",
+						containsString("does not match the current offer")
+				));
+
+		LunchRequest unchanged = lunchRequestRepository.findById(request.getId())
+				.orElseThrow();
+		org.assertj.core.api.Assertions.assertThat(unchanged.getStatus())
+				.isEqualTo(LunchRequestStatus.EXTENSION_REQUESTED);
+		org.assertj.core.api.Assertions.assertThat(unchanged.getExtensionCount())
+				.isEqualTo(1);
+		org.assertj.core.api.Assertions.assertThat(unchanged.getTimeSlot())
+				.isEqualTo(LocalDateTime.of(2026, 8, 14, 12, 25));
+
+		extendRequest(secondOfferId)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.timeSlot").value("2026-08-14T12:35:00"))
+				.andExpect(jsonPath("$.extensionCount").value(2));
+	}
+
+	@Test
+	void extendValidatesOfferId() throws Exception {
+		mockMvc.perform(user.authorize(post("/api/lunch/requests/me/extend"))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{}"))
+				.andExpect(status().isBadRequest());
 	}
 
 	private JsonNode createRequest(String time, String topic, String comment) throws Exception {
@@ -305,15 +384,25 @@ class LunchRequestControllerTests {
 		).orElseThrow();
 	}
 
-	private void offerExtension(LunchRequest request, LocalDateTime offeredAt) {
+	private UUID offerExtension(LunchRequest request, LocalDateTime offeredAt) {
 		clock.setLocalDateTime(offeredAt);
+		UUID offerId = UUID.randomUUID();
 		request.setStatus(LunchRequestStatus.EXTENSION_REQUESTED);
+		request.setExtensionOfferId(offerId);
 		request.setExtensionRequestedAt(offeredAt);
+		request.setExtensionExpiresAt(offeredAt.plusMinutes(5));
+		request.setExtensionTargetTimeSlot(request.getTimeSlot().plusMinutes(10));
 		lunchRequestRepository.saveAndFlush(request);
+		return offerId;
 	}
 
-	private ResultActions extendRequest() throws Exception {
-		return mockMvc.perform(user.authorize(post("/api/lunch/requests/me/extend")));
+	private ResultActions extendRequest(UUID offerId) throws Exception {
+		String content = objectMapper.writeValueAsString(
+				objectMapper.createObjectNode().put("offerId", offerId.toString())
+		);
+		return mockMvc.perform(user.authorize(post("/api/lunch/requests/me/extend"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(content));
 	}
 
 	private JsonNode responseFrom(ResultActions actions) throws Exception {

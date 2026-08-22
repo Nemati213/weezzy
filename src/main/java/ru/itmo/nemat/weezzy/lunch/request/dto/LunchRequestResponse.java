@@ -17,7 +17,10 @@ public record LunchRequestResponse(
 		String comment,
 		LocalDateTime timeSlot,
 		int extensionCount,
+		UUID extensionOfferId,
 		LocalDateTime extensionRequestedAt,
+		LocalDateTime extensionExpiresAt,
+		LocalDateTime extensionTargetTimeSlot,
 		LocalDateTime cancelledAt,
 		LocalDateTime createdAt,
 		LocalDateTime updatedAt
@@ -32,7 +35,10 @@ public record LunchRequestResponse(
 				request.getComment(),
 				request.getTimeSlot(),
 				request.getExtensionCount(),
+				request.getExtensionOfferId(),
 				request.getExtensionRequestedAt(),
+				request.getExtensionExpiresAt(),
+				request.getExtensionTargetTimeSlot(),
 				request.getCancelledAt(),
 				request.getCreatedAt(),
 				request.getUpdatedAt()

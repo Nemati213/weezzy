@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.EnumSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -96,14 +97,17 @@ public class LunchRequestService {
 	}
 
 	@Transactional
-	public LunchRequest extendCurrent(UUID userId) {
+	public LunchRequest extendCurrent(UUID userId, UUID offerId) {
 		Profile profile = profileService.findByUserIdForUpdate(userId);
 		LunchRequest request = lunchRequestRepository
 				.findActiveForUpdate(profile.getId(), ACTIVE_STATUSES)
 				.orElseThrow(() -> new LunchRequestNotFoundException(profile.getId()));
 		LocalDateTime now = now();
 
-		if (isRepeatedSuccessfulExtension(request, now)) {
+		if (!Objects.equals(request.getExtensionOfferId(), offerId)) {
+			throw new LunchExtensionOfferMismatchException(request.getId());
+		}
+		if (request.getStatus() == LunchRequestStatus.SEARCHING) {
 			return request;
 		}
 		if (request.getStatus() != LunchRequestStatus.EXTENSION_REQUESTED) {
@@ -121,8 +125,7 @@ public class LunchRequestService {
 		}
 		ensureExtensionOfferActive(request, now);
 
-		LocalDateTime extendedTimeSlot = request.getTimeSlot()
-				.plus(properties.extensionDuration());
+		LocalDateTime extendedTimeSlot = request.getExtensionTargetTimeSlot();
 		ensureTimeSlotWithinWindow(extendedTimeSlot, request.getTimeSlot().toLocalDate());
 		request.setTimeSlot(extendedTimeSlot);
 		request.setExtensionCount(request.getExtensionCount() + 1);
@@ -187,35 +190,22 @@ public class LunchRequestService {
 		}
 	}
 
-	private boolean isRepeatedSuccessfulExtension(
-			LunchRequest request,
-			LocalDateTime now
-	) {
-		return request.getStatus() == LunchRequestStatus.SEARCHING
-				&& request.getExtensionCount() > 0
-				&& request.getExtensionRequestedAt() != null
-				&& now.isBefore(extensionOfferExpiresAt(request));
-	}
-
 	private void ensureExtensionOfferActive(
 			LunchRequest request,
 			LocalDateTime now
 	) {
-		if (request.getExtensionRequestedAt() == null) {
+		if (request.getExtensionRequestedAt() == null
+				|| request.getExtensionExpiresAt() == null
+				|| request.getExtensionTargetTimeSlot() == null) {
 			throw new InvalidLunchRequestStateException(
 					request.getId(),
 					request.getStatus(),
 					"extend"
 			);
 		}
-		if (!now.isBefore(extensionOfferExpiresAt(request))) {
+		if (!now.isBefore(request.getExtensionExpiresAt())) {
 			throw new LunchExtensionOfferExpiredException(request.getId());
 		}
-	}
-
-	private LocalDateTime extensionOfferExpiresAt(LunchRequest request) {
-		return request.getExtensionRequestedAt()
-				.plus(properties.extensionResponseTimeout());
 	}
 
 	private String normalizeComment(String comment) {
