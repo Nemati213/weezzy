@@ -6,6 +6,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -60,4 +61,12 @@ public interface ProfileBlockRepository extends JpaRepository<ProfileBlock, Prof
 			@Param("firstProfileId") UUID firstProfileId,
 			@Param("secondProfileId") UUID secondProfileId
 	);
+
+	@Query("""
+			SELECT CASE WHEN COUNT(profileBlock) > 0 THEN true ELSE false END
+			FROM ProfileBlock profileBlock
+			WHERE profileBlock.blockerProfileId IN :profileIds
+			  AND profileBlock.blockedProfileId IN :profileIds
+			""")
+	boolean existsWithin(@Param("profileIds") Collection<UUID> profileIds);
 }
