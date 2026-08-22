@@ -19,6 +19,7 @@ app:
     extension-duration: ${LUNCH_EXTENSION_DURATION:PT10M}
     max-extensions: ${LUNCH_MAX_EXTENSIONS:2}
     extension-response-timeout: ${LUNCH_EXTENSION_RESPONSE_TIMEOUT:PT5M}
+    group-duration: ${LUNCH_GROUP_DURATION:PT1H}
     matching:
       enabled: ${LUNCH_MATCHING_ENABLED:true}
       fixed-delay: ${LUNCH_MATCHING_FIXED_DELAY:PT1M}

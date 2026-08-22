@@ -21,6 +21,7 @@ public record LunchProperties(
 		@NotNull Duration extensionDuration,
 		@Min(0) int maxExtensions,
 		@NotNull Duration extensionResponseTimeout,
+		@NotNull Duration groupDuration,
 		@Valid @NotNull Matching matching,
 		@Valid @NotNull Lifecycle lifecycle
 ) {
@@ -58,6 +59,7 @@ public record LunchProperties(
 				&& isPositiveWholeMinutes(slotInterval)
 				&& isPositiveWholeMinutes(extensionDuration)
 				&& isPositiveWholeMinutes(extensionResponseTimeout)
+				&& isPositiveWholeMinutes(groupDuration)
 				&& extensionDuration.compareTo(
 						Duration.between(windowStart, windowEnd)
 				) <= 0;

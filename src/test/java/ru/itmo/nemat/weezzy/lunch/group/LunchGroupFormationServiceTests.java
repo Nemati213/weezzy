@@ -21,6 +21,7 @@ import ru.itmo.nemat.weezzy.lunch.request.LunchRequest;
 import ru.itmo.nemat.weezzy.lunch.request.LunchRequestRepository;
 import ru.itmo.nemat.weezzy.lunch.request.LunchRequestStatus;
 import ru.itmo.nemat.weezzy.lunch.request.LunchTopic;
+import ru.itmo.nemat.weezzy.lunch.group.lifecycle.LunchGroupLifecycleService;
 import ru.itmo.nemat.weezzy.moderation.sanction.AccountSanction;
 import ru.itmo.nemat.weezzy.moderation.sanction.AccountSanctionRepository;
 import ru.itmo.nemat.weezzy.moderation.sanction.AccountSanctionType;
@@ -32,6 +33,7 @@ import ru.itmo.nemat.weezzy.outbox.OutboxEventRepository;
 import ru.itmo.nemat.weezzy.outbox.OutboxEventStatus;
 import ru.itmo.nemat.weezzy.outbox.OutboxEventType;
 import ru.itmo.nemat.weezzy.outbox.handler.LunchGroupFormedEventHandler;
+import ru.itmo.nemat.weezzy.outbox.handler.LunchGroupCancelledEventHandler;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileRepository;
 import ru.itmo.nemat.weezzy.profile.ProfileStatus;
@@ -71,6 +73,9 @@ class LunchGroupFormationServiceTests {
 	private LunchGroupFormationService formationService;
 
 	@Autowired
+	private LunchGroupLifecycleService lifecycleService;
+
+	@Autowired
 	private LunchGroupRepository groupRepository;
 
 	@Autowired
@@ -105,6 +110,9 @@ class LunchGroupFormationServiceTests {
 
 	@Autowired
 	private LunchGroupFormedEventHandler formedEventHandler;
+
+	@Autowired
+	private LunchGroupCancelledEventHandler cancelledEventHandler;
 
 	private Location location;
 
@@ -373,6 +381,169 @@ class LunchGroupFormationServiceTests {
 	}
 
 	@Test
+	void blockCreatedBeforeLunchCancelsGroupAndRequeuesEveryRequest() {
+		List<Participant> participants = List.of(
+				createParticipant("First", location, slot()),
+				createParticipant("Second", location, slot()),
+				createParticipant("Third", location, slot())
+		);
+		LunchGroup group = formationService.formGroup(
+				requestIds(participants),
+				LunchTopic.STUDY
+		);
+		ProfileBlock block = new ProfileBlock();
+		block.setBlockerProfileId(participants.get(0).profile().getId());
+		block.setBlockedProfileId(participants.get(1).profile().getId());
+		blockRepository.saveAndFlush(block);
+
+		assertThat(lifecycleService.cancelInvalidGroups(
+				slot().minusMinutes(10),
+				100
+		)).contains(group.getId());
+
+		LunchGroup cancelled = groupRepository.findById(group.getId()).orElseThrow();
+		assertThat(cancelled.getStatus()).isEqualTo(LunchGroupStatus.CANCELLED);
+		assertThat(cancelled.getCancellationReason())
+				.isEqualTo(LunchGroupCancellationReason.MEMBERS_INCOMPATIBLE);
+		assertThat(cancelled.getCancelledAt()).isEqualTo(slot().minusMinutes(10));
+		assertThat(requestRepository.findAllById(requestIds(participants)))
+				.extracting(LunchRequest::getStatus)
+				.containsOnly(LunchRequestStatus.SEARCHING);
+		assertThat(memberRepository.findByGroupIdOrderByJoinedAtAsc(group.getId()))
+				.extracting(LunchGroupMember::getReleasedAt)
+				.doesNotContainNull();
+		assertThat(lifecycleService.cancelInvalidGroups(
+				slot().minusMinutes(10),
+				100
+		)).doesNotContain(group.getId());
+
+		OutboxEvent event = cancellationEvent(group.getId());
+		cancelledEventHandler.handle(event);
+		cancelledEventHandler.handle(event);
+		List<Notification> notifications = notificationRepository.findAll().stream()
+				.filter(notification -> event.getId().equals(
+						notification.getSourceEventId()
+				))
+				.toList();
+		assertThat(notifications).hasSize(3);
+		assertThat(notifications).extracting(Notification::getType)
+				.containsOnly(NotificationType.LUNCH_GROUP_CANCELLED);
+		assertThat(notifications).allSatisfy(notification ->
+				assertThat(notification.getPayload()).containsOnlyKeys(
+						"groupId",
+						"locationId",
+						"timeSlot",
+						"topic",
+						"reason"
+				)
+		);
+	}
+
+	@Test
+	void invalidMemberExpiresWhileEligibleMembersCanBeMatchedAgain() {
+		List<Participant> participants = List.of(
+				createParticipant("First", location, slot()),
+				createParticipant("Second", location, slot()),
+				createParticipant("Third", location, slot())
+		);
+		LunchGroup cancelledGroup = formationService.formGroup(
+				requestIds(participants),
+				LunchTopic.STUDY
+		);
+		Participant invalid = participants.get(2);
+		AccountSanction sanction = new AccountSanction();
+		sanction.setTargetUserId(invalid.profile().getUser().getId());
+		sanction.setTargetProfileId(invalid.profile().getId());
+		sanction.setType(AccountSanctionType.PERMANENT_BAN);
+		sanction.setReason("Group lifecycle eligibility test");
+		sanction.setCreatedByUserId(participants.get(0).profile().getUser().getId());
+		sanctionRepository.saveAndFlush(sanction);
+
+		assertThat(lifecycleService.cancelInvalidGroups(
+				slot().minusMinutes(10),
+				100
+		)).contains(cancelledGroup.getId());
+		assertThat(groupRepository.findById(cancelledGroup.getId()).orElseThrow()
+				.getCancellationReason())
+				.isEqualTo(LunchGroupCancellationReason.MEMBER_INELIGIBLE);
+		assertThat(requestRepository.findById(invalid.request().getId()).orElseThrow()
+				.getStatus()).isEqualTo(LunchRequestStatus.EXPIRED);
+		assertThat(requestRepository.findAllById(List.of(
+				participants.get(0).request().getId(),
+				participants.get(1).request().getId()
+		))).extracting(LunchRequest::getStatus)
+				.containsOnly(LunchRequestStatus.SEARCHING);
+
+		LunchGroup replacement = formationService.formGroup(
+				List.of(
+						participants.get(0).request().getId(),
+						participants.get(1).request().getId()
+				),
+				LunchTopic.NETWORKING
+		);
+		assertThat(replacement.getId()).isNotEqualTo(cancelledGroup.getId());
+		assertThat(memberRepository.findAllByLunchRequestIds(List.of(
+				participants.get(0).request().getId(),
+				participants.get(1).request().getId()
+		))).extracting(member -> member.getGroup().getId())
+				.containsOnly(replacement.getId());
+	}
+
+	@Test
+	void healthyUpcomingGroupIsNotCancelled() {
+		List<Participant> participants = List.of(
+				createParticipant("First", location, slot()),
+				createParticipant("Second", location, slot())
+		);
+		LunchGroup group = formationService.formGroup(
+				requestIds(participants),
+				LunchTopic.STUDY
+		);
+
+		assertThat(lifecycleService.cancelInvalidGroups(
+				slot().minusMinutes(10),
+				100
+		)).doesNotContain(group.getId());
+		assertThat(groupRepository.findById(group.getId()).orElseThrow().getStatus())
+				.isEqualTo(LunchGroupStatus.ACTIVE);
+		assertThat(requestRepository.findAllById(requestIds(participants)))
+				.extracting(LunchRequest::getStatus)
+				.containsOnly(LunchRequestStatus.MATCHED);
+	}
+
+	@Test
+	void validationCursorDoesNotLetHealthyGroupsStarveLaterGroups() {
+		LocalDateTime now = LocalDateTime.of(2026, 8, 22, 12, 0);
+		List<Participant> firstHealthy = List.of(
+				createParticipant("Healthy first A", location, now.plusMinutes(10)),
+				createParticipant("Healthy first B", location, now.plusMinutes(10))
+		);
+		List<Participant> secondHealthy = List.of(
+				createParticipant("Healthy second A", location, now.plusMinutes(15)),
+				createParticipant("Healthy second B", location, now.plusMinutes(15))
+		);
+		List<Participant> invalid = List.of(
+				createParticipant("Invalid A", location, now.plusMinutes(20)),
+				createParticipant("Invalid B", location, now.plusMinutes(20))
+		);
+		formationService.formGroup(requestIds(firstHealthy), LunchTopic.STUDY);
+		formationService.formGroup(requestIds(secondHealthy), LunchTopic.STUDY);
+		LunchGroup invalidGroup = formationService.formGroup(
+				requestIds(invalid),
+				LunchTopic.STUDY
+		);
+		ProfileBlock block = new ProfileBlock();
+		block.setBlockerProfileId(invalid.get(0).profile().getId());
+		block.setBlockedProfileId(invalid.get(1).profile().getId());
+		blockRepository.saveAndFlush(block);
+
+		assertThat(lifecycleService.cancelInvalidGroups(now, 2))
+				.doesNotContain(invalidGroup.getId());
+		assertThat(lifecycleService.cancelInvalidGroups(now, 2))
+				.contains(invalidGroup.getId());
+	}
+
+	@Test
 	void duplicateCandidateIdsAreRejected() {
 		Participant participant = createParticipant("First", location, slot());
 
@@ -507,6 +678,16 @@ class LunchGroupFormationServiceTests {
 		List<OutboxEvent> events = outboxEventRepository.findAll().stream()
 				.filter(event -> event.getEventType()
 						== OutboxEventType.LUNCH_GROUP_FORMED)
+				.filter(event -> eventPayloadId(event).equals(groupId.toString()))
+				.toList();
+		assertThat(events).hasSize(1);
+		return events.getFirst();
+	}
+
+	private OutboxEvent cancellationEvent(UUID groupId) {
+		List<OutboxEvent> events = outboxEventRepository.findAll().stream()
+				.filter(event -> event.getEventType()
+						== OutboxEventType.LUNCH_GROUP_CANCELLED)
 				.filter(event -> eventPayloadId(event).equals(groupId.toString()))
 				.toList();
 		assertThat(events).hasSize(1);

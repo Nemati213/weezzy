@@ -59,6 +59,13 @@ public class LunchGroup {
 	@Column(name = "cancelled_at")
 	private LocalDateTime cancelledAt;
 
+	@Enumerated(EnumType.STRING)
+	@Column(name = "cancellation_reason", length = 50)
+	private LunchGroupCancellationReason cancellationReason;
+
+	@Column(name = "lifecycle_checked_at")
+	private LocalDateTime lifecycleCheckedAt;
+
 	@PrePersist
 	void onCreate() {
 		LocalDateTime now = LocalDateTime.now();

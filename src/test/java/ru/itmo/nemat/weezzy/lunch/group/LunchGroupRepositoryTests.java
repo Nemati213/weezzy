@@ -113,7 +113,7 @@ class LunchGroupRepositoryTests {
 						second.getProfile().getId()
 				);
 		assertThat(memberRepository.countByGroupId(group.getId())).isEqualTo(2);
-		assertThat(memberRepository.existsByLunchRequestId(
+		assertThat(memberRepository.existsByLunchRequestIdAndReleasedAtIsNull(
 				first.getLunchRequest().getId()
 		)).isTrue();
 	}

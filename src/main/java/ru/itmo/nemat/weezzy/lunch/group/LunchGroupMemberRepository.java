@@ -14,11 +14,19 @@ import java.util.UUID;
 public interface LunchGroupMemberRepository
 		extends JpaRepository<LunchGroupMember, LunchGroupMemberId> {
 	@EntityGraph(attributePaths = {"profile", "profile.user", "lunchRequest"})
-	List<LunchGroupMember> findByGroupIdOrderByJoinedAtAsc(UUID groupId);
+	@Query("""
+			SELECT member
+			FROM LunchGroupMember member
+			WHERE member.group.id = :groupId
+			ORDER BY member.joinedAt, member.profile.id
+			""")
+	List<LunchGroupMember> findByGroupIdOrderByJoinedAtAsc(
+			@Param("groupId") UUID groupId
+	);
 
 	long countByGroupId(UUID groupId);
 
-	boolean existsByLunchRequestId(UUID lunchRequestId);
+	boolean existsByLunchRequestIdAndReleasedAtIsNull(UUID lunchRequestId);
 
 	@Query("""
 			SELECT member
@@ -26,6 +34,7 @@ public interface LunchGroupMemberRepository
 			JOIN FETCH member.group lunchGroup
 			JOIN FETCH lunchGroup.location
 			WHERE member.lunchRequest.id IN :requestIds
+			  AND member.releasedAt IS NULL
 			""")
 	List<LunchGroupMember> findAllByLunchRequestIds(
 			@Param("requestIds") Collection<UUID> requestIds
@@ -37,6 +46,7 @@ public interface LunchGroupMemberRepository
 			JOIN FETCH member.group.location
 			WHERE member.profile.id = :profileId
 			  AND member.group.status = :status
+			  AND member.releasedAt IS NULL
 			""")
 	Optional<LunchGroup> findGroupByProfileIdAndStatus(
 			@Param("profileId") UUID profileId,
@@ -48,9 +58,22 @@ public interface LunchGroupMemberRepository
 			FROM LunchGroupMember member
 			WHERE member.profile.id IN :profileIds
 			  AND member.group.status = :status
+			  AND member.releasedAt IS NULL
 			""")
 	Set<UUID> findProfileIdsByGroupStatus(
 			@Param("profileIds") Collection<UUID> profileIds,
 			@Param("status") LunchGroupStatus status
+	);
+
+	@EntityGraph(attributePaths = {"profile", "profile.user", "lunchRequest"})
+	@Query("""
+			SELECT member
+			FROM LunchGroupMember member
+			WHERE member.group.id IN :groupIds
+			  AND member.releasedAt IS NULL
+			ORDER BY member.group.id, member.profile.id
+			""")
+	List<LunchGroupMember> findCurrentByGroupIds(
+			@Param("groupIds") Collection<UUID> groupIds
 	);
 }

@@ -7,7 +7,6 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.MapsId;
-import jakarta.persistence.OneToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import lombok.Getter;
@@ -37,12 +36,15 @@ public class LunchGroupMember {
 	@JoinColumn(name = "profile_id", nullable = false)
 	private Profile profile;
 
-	@OneToOne(fetch = FetchType.LAZY, optional = false)
-	@JoinColumn(name = "lunch_request_id", nullable = false, unique = true)
+	@ManyToOne(fetch = FetchType.LAZY, optional = false)
+	@JoinColumn(name = "lunch_request_id", nullable = false)
 	private LunchRequest lunchRequest;
 
 	@Column(name = "joined_at", nullable = false, updatable = false)
 	private LocalDateTime joinedAt;
+
+	@Column(name = "released_at")
+	private LocalDateTime releasedAt;
 
 	@PrePersist
 	void onCreate() {
