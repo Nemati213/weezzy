@@ -26,12 +26,23 @@ public class LunchRequestLifecycleWorker {
 	private final Clock clock;
 
 	@Scheduled(fixedDelayString = "${app.lunch.lifecycle.fixed-delay}")
-	public void offerExtensions() {
+	public void processLifecycle() {
 		try {
-			List<UUID> offeredRequestIds = lifecycleService.offerExtensions(
-					now(),
+			LocalDateTime now = now();
+			List<UUID> expiredRequestIds = lifecycleService.expireRequests(
+					now,
 					properties.lifecycle().batchSize()
 			);
+			List<UUID> offeredRequestIds = lifecycleService.offerExtensions(
+					now,
+					properties.lifecycle().batchSize()
+			);
+			if (!expiredRequestIds.isEmpty()) {
+				log.info(
+						"Expired {} lunch requests",
+						expiredRequestIds.size()
+				);
+			}
 			if (!offeredRequestIds.isEmpty()) {
 				log.info(
 						"Created {} lunch extension offers",
@@ -39,7 +50,7 @@ public class LunchRequestLifecycleWorker {
 				);
 			}
 		} catch (Exception exception) {
-			log.error("Lunch extension offer processing failed", exception);
+			log.error("Lunch request lifecycle processing failed", exception);
 		}
 	}
 

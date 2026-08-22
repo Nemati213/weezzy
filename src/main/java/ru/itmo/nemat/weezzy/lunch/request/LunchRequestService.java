@@ -203,7 +203,8 @@ public class LunchRequestService {
 					"extend"
 			);
 		}
-		if (!now.isBefore(request.getExtensionExpiresAt())) {
+		if (!now.isBefore(request.getExtensionExpiresAt())
+				|| !now.isBefore(request.getExtensionTargetTimeSlot())) {
 			throw new LunchExtensionOfferExpiredException(request.getId());
 		}
 	}

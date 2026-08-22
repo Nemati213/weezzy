@@ -20,7 +20,9 @@ import ru.itmo.nemat.weezzy.location.LocationType;
 import ru.itmo.nemat.weezzy.location.University;
 import ru.itmo.nemat.weezzy.location.UniversityRepository;
 import ru.itmo.nemat.weezzy.lunch.request.LunchRequest;
+import ru.itmo.nemat.weezzy.lunch.request.LunchRequestNotFoundException;
 import ru.itmo.nemat.weezzy.lunch.request.LunchRequestRepository;
+import ru.itmo.nemat.weezzy.lunch.request.LunchRequestService;
 import ru.itmo.nemat.weezzy.lunch.request.LunchRequestStatus;
 import ru.itmo.nemat.weezzy.lunch.request.LunchTopic;
 import ru.itmo.nemat.weezzy.notification.Notification;
@@ -84,6 +86,9 @@ class LunchRequestLifecycleServiceTests {
 	private LunchRequestLifecycleService lifecycleService;
 
 	@Autowired
+	private LunchRequestService requestService;
+
+	@Autowired
 	private LunchExtensionRequestedEventHandler eventHandler;
 
 	@Autowired
@@ -118,6 +123,13 @@ class LunchRequestLifecycleServiceTests {
 
 	@BeforeEach
 	void setUp() {
+		notificationRepository.deleteAll();
+		outboxEventRepository.deleteAll();
+		requestRepository.deleteAll();
+		profileRepository.deleteAll();
+		userRepository.deleteAll();
+		locationRepository.deleteAll();
+		universityRepository.deleteAll();
 		location = createLocation();
 	}
 
@@ -275,6 +287,161 @@ class LunchRequestLifecycleServiceTests {
 		)).isEmpty();
 	}
 
+	@Test
+	void expiredOffersAndUnextendableSearchesExpireIdempotently() {
+		LocalDateTime processingTime = LocalDateTime.of(2026, 8, 22, 15, 0);
+		Participant expiredOffer = createExtensionRequestedParticipant(
+				NOW,
+				NOW.plusMinutes(5)
+		);
+		Participant malformedOffer = createExtensionRequestedParticipant(
+				NOW,
+				null
+		);
+		Participant previousDay = createParticipant(
+				LocalDateTime.of(2026, 8, 21, 12, 0),
+				0
+		);
+		Participant reachedLimit = createParticipant(NOW, 2);
+		Participant tooLate = createParticipant(
+				LocalDateTime.of(2026, 8, 22, 14, 55),
+				0
+		);
+		Participant missedTarget = createParticipant(
+				LocalDateTime.of(2026, 8, 22, 14, 40),
+				0
+		);
+
+		List<UUID> expired = lifecycleService.expireRequests(processingTime, 100);
+
+		assertThat(expired).containsExactlyInAnyOrder(
+				expiredOffer.request().getId(),
+				malformedOffer.request().getId(),
+				previousDay.request().getId(),
+				reachedLimit.request().getId(),
+				tooLate.request().getId(),
+				missedTarget.request().getId()
+		);
+		assertThat(requestStatus(expiredOffer)).isEqualTo(LunchRequestStatus.EXPIRED);
+		assertThat(requestStatus(malformedOffer)).isEqualTo(LunchRequestStatus.EXPIRED);
+		assertThat(requestStatus(previousDay)).isEqualTo(LunchRequestStatus.EXPIRED);
+		assertThat(requestStatus(reachedLimit)).isEqualTo(LunchRequestStatus.EXPIRED);
+		assertThat(requestStatus(tooLate)).isEqualTo(LunchRequestStatus.EXPIRED);
+		assertThat(requestStatus(missedTarget)).isEqualTo(LunchRequestStatus.EXPIRED);
+		assertThat(lifecycleService.expireRequests(processingTime, 100)).isEmpty();
+	}
+
+	@Test
+	void activeOfferAndExtendableSearchDoNotExpire() {
+		Participant activeOffer = createExtensionRequestedParticipant(
+				NOW,
+				NOW.plusMinutes(1)
+		);
+		Participant extendable = createParticipant(NOW, 0);
+
+		assertThat(lifecycleService.expireRequests(NOW, 100)).isEmpty();
+		assertThat(requestStatus(activeOffer))
+				.isEqualTo(LunchRequestStatus.EXTENSION_REQUESTED);
+		assertThat(requestStatus(extendable)).isEqualTo(LunchRequestStatus.SEARCHING);
+	}
+
+	@Test
+	void parallelExpirationBatchesExpireEachRequestOnce() throws Exception {
+		List<Participant> participants = new ArrayList<>();
+		for (int index = 0; index < 20; index++) {
+			participants.add(createExtensionRequestedParticipant(
+					NOW.minusMinutes(10),
+					NOW
+			));
+		}
+		Set<UUID> requestIds = participants.stream()
+				.map(participant -> participant.request().getId())
+				.collect(java.util.stream.Collectors.toSet());
+		CountDownLatch ready = new CountDownLatch(2);
+		CountDownLatch start = new CountDownLatch(1);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+
+		try {
+			Future<List<UUID>> first = executor.submit(() -> expireAfterSignal(
+					ready,
+					start,
+					NOW
+			));
+			Future<List<UUID>> second = executor.submit(() -> expireAfterSignal(
+					ready,
+					start,
+					NOW
+			));
+			assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+			start.countDown();
+
+			List<UUID> expired = new ArrayList<>(first.get(10, TimeUnit.SECONDS));
+			expired.addAll(second.get(10, TimeUnit.SECONDS));
+			assertThat(expired).containsExactlyInAnyOrderElementsOf(requestIds);
+			assertThat(new HashSet<>(expired)).hasSize(20);
+		} finally {
+			start.countDown();
+			executor.shutdownNow();
+		}
+
+		assertThat(requestRepository.findAllById(requestIds))
+				.extracting(LunchRequest::getStatus)
+				.containsOnly(LunchRequestStatus.EXPIRED);
+	}
+
+	@Test
+	void extensionAcceptanceAndExpirationCannotBothWin() throws Exception {
+		Participant participant = createExtensionRequestedParticipant(
+				NOW,
+				NOW.plusMinutes(1)
+		);
+		UUID offerId = participant.request().getExtensionOfferId();
+		CountDownLatch ready = new CountDownLatch(2);
+		CountDownLatch start = new CountDownLatch(1);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+
+		try {
+			Future<Boolean> accepted = executor.submit(() -> {
+				ready.countDown();
+				if (!start.await(5, TimeUnit.SECONDS)) {
+					throw new IllegalStateException("Lifecycle start signal timed out");
+				}
+				try {
+					requestService.extendCurrent(participant.user().getId(), offerId);
+					return true;
+				} catch (LunchRequestNotFoundException exception) {
+					return false;
+				}
+			});
+			Future<List<UUID>> expired = executor.submit(() -> expireAfterSignal(
+					ready,
+					start,
+					NOW.plusMinutes(2)
+			));
+			assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+			start.countDown();
+
+			boolean acceptanceWon = accepted.get(10, TimeUnit.SECONDS);
+			List<UUID> expiredIds = expired.get(10, TimeUnit.SECONDS);
+			LunchRequest request = requestRepository.findById(
+					participant.request().getId()
+			).orElseThrow();
+			if (acceptanceWon) {
+				assertThat(expiredIds).doesNotContain(request.getId());
+				assertThat(request.getStatus()).isEqualTo(LunchRequestStatus.SEARCHING);
+				assertThat(request.getExtensionCount()).isEqualTo(1);
+				assertThat(request.getTimeSlot()).isEqualTo(NOW.plusMinutes(10));
+			} else {
+				assertThat(expiredIds).contains(request.getId());
+				assertThat(request.getStatus()).isEqualTo(LunchRequestStatus.EXPIRED);
+				assertThat(request.getExtensionCount()).isZero();
+			}
+		} finally {
+			start.countDown();
+			executor.shutdownNow();
+		}
+	}
+
 	private List<UUID> offerAfterSignal(
 			CountDownLatch ready,
 			CountDownLatch start
@@ -284,6 +451,33 @@ class LunchRequestLifecycleServiceTests {
 			throw new IllegalStateException("Lifecycle start signal timed out");
 		}
 		return lifecycleService.offerExtensions(NOW, 100);
+	}
+
+	private List<UUID> expireAfterSignal(
+			CountDownLatch ready,
+			CountDownLatch start,
+			LocalDateTime now
+	) throws InterruptedException {
+		ready.countDown();
+		if (!start.await(5, TimeUnit.SECONDS)) {
+			throw new IllegalStateException("Lifecycle start signal timed out");
+		}
+		return lifecycleService.expireRequests(now, 100);
+	}
+
+	private Participant createExtensionRequestedParticipant(
+			LocalDateTime timeSlot,
+			LocalDateTime expiresAt
+	) {
+		Participant participant = createParticipant(timeSlot, 0);
+		LunchRequest request = participant.request();
+		request.setStatus(LunchRequestStatus.EXTENSION_REQUESTED);
+		request.setExtensionOfferId(UUID.randomUUID());
+		request.setExtensionRequestedAt(timeSlot);
+		request.setExtensionExpiresAt(expiresAt);
+		request.setExtensionTargetTimeSlot(timeSlot.plusMinutes(10));
+		requestRepository.saveAndFlush(request);
+		return participant;
 	}
 
 	private Participant createParticipant(

@@ -63,13 +63,15 @@ public class LunchExtensionRequestedEventHandler implements OutboxEventHandler {
 			LunchRequest request,
 			LunchExtensionRequestedPayload payload
 	) {
+		LocalDateTime now = now();
 		return request != null
 				&& request.getStatus() == LunchRequestStatus.EXTENSION_REQUESTED
 				&& Objects.equals(request.getExtensionOfferId(), payload.offerId())
 				&& request.getExtensionExpiresAt() != null
 				&& request.getExtensionTargetTimeSlot() != null
 				&& request.getProfile().getUser() != null
-				&& now().isBefore(request.getExtensionExpiresAt());
+				&& now.isBefore(request.getExtensionExpiresAt())
+				&& now.isBefore(request.getExtensionTargetTimeSlot());
 	}
 
 	private LocalDateTime now() {
