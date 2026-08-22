@@ -21,7 +21,8 @@ public record LunchProperties(
 		@NotNull Duration extensionDuration,
 		@Min(0) int maxExtensions,
 		@NotNull Duration extensionResponseTimeout,
-		@Valid @NotNull Matching matching
+		@Valid @NotNull Matching matching,
+		@Valid @NotNull Lifecycle lifecycle
 ) {
 	public record Matching(
 			boolean enabled,
@@ -36,6 +37,19 @@ public record LunchProperties(
 		}
 	}
 
+	public record Lifecycle(
+			boolean enabled,
+			@NotNull Duration fixedDelay,
+			@Min(1) int batchSize
+	) {
+		@AssertTrue(message = "lunch lifecycle fixed delay must be positive")
+		public boolean hasPositiveFixedDelay() {
+			return fixedDelay != null
+					&& !fixedDelay.isZero()
+					&& !fixedDelay.isNegative();
+		}
+	}
+
 	@AssertTrue(message = "lunch time window and durations must be valid")
 	public boolean hasValidTimeConfiguration() {
 		return windowStart != null
@@ -43,7 +57,10 @@ public record LunchProperties(
 				&& windowStart.isBefore(windowEnd)
 				&& isPositiveWholeMinutes(slotInterval)
 				&& isPositiveWholeMinutes(extensionDuration)
-				&& isPositiveWholeMinutes(extensionResponseTimeout);
+				&& isPositiveWholeMinutes(extensionResponseTimeout)
+				&& extensionDuration.compareTo(
+						Duration.between(windowStart, windowEnd)
+				) <= 0;
 	}
 
 	private boolean isPositiveWholeMinutes(Duration duration) {

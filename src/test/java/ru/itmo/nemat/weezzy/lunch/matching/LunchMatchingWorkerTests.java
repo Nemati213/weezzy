@@ -53,6 +53,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers
 @SpringBootTest(properties = {
 		"app.lunch.matching.enabled=false",
+		"app.lunch.lifecycle.enabled=false",
 		"app.outbox.worker.enabled=false",
 		"app.outbox.cleanup.enabled=false"
 })

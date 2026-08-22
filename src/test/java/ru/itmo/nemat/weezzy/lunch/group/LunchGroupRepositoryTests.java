@@ -33,7 +33,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers
-@SpringBootTest(properties = "app.lunch.matching.enabled=false")
+@SpringBootTest(properties = {
+		"app.lunch.matching.enabled=false",
+		"app.lunch.lifecycle.enabled=false"
+})
 class LunchGroupRepositoryTests {
 	private static final DockerImageName POSTGRES_IMAGE =
 			DockerImageName.parse("pgvector/pgvector:pg17")

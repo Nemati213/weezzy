@@ -79,4 +79,14 @@ public interface LunchRequestRepository extends JpaRepository<LunchRequest, UUID
 	List<LunchRequest> findAllByIdForUpdate(
 			@Param("requestIds") Collection<UUID> requestIds
 	);
+
+	@EntityGraph(attributePaths = {"profile", "profile.user"})
+	@Query("""
+			SELECT request
+			FROM LunchRequest request
+			WHERE request.id = :requestId
+			""")
+	Optional<LunchRequest> findForExtensionNotification(
+			@Param("requestId") UUID requestId
+	);
 }

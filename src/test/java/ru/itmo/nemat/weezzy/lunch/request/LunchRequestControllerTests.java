@@ -46,7 +46,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @Testcontainers
-@SpringBootTest(properties = "app.lunch.matching.enabled=false")
+@SpringBootTest(properties = {
+		"app.lunch.matching.enabled=false",
+		"app.lunch.lifecycle.enabled=false"
+})
 @AutoConfigureMockMvc
 @Import(LunchRequestControllerTests.TestClockConfiguration.class)
 class LunchRequestControllerTests {
