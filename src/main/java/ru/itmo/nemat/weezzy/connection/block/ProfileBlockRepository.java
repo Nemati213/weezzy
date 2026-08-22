@@ -69,4 +69,15 @@ public interface ProfileBlockRepository extends JpaRepository<ProfileBlock, Prof
 			  AND profileBlock.blockedProfileId IN :profileIds
 			""")
 	boolean existsWithin(@Param("profileIds") Collection<UUID> profileIds);
+
+	@Query("""
+			SELECT profileBlock
+			FROM ProfileBlock profileBlock
+			WHERE profileBlock.blockerProfileId IN :profileIds
+			  AND profileBlock.blockedProfileId IN :profileIds
+			ORDER BY profileBlock.blockerProfileId, profileBlock.blockedProfileId
+			""")
+	List<ProfileBlock> findAllWithin(
+			@Param("profileIds") Collection<UUID> profileIds
+	);
 }

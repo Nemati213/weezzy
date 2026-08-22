@@ -6,6 +6,7 @@ import ru.itmo.nemat.weezzy.lunch.request.LunchTopic;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -254,6 +255,38 @@ class LunchMatchingPipelineTests {
 		assertThatThrownBy(() -> bucket(List.of(candidate, sameProfile)))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("profile IDs");
+	}
+
+	@Test
+	void incompatiblePairDoesNotStopOtherCandidatesFromMatching() {
+		List<MatchingCandidate> candidates = List.of(
+				candidate(1, LunchTopic.STUDY),
+				candidate(2, LunchTopic.STARTUPS),
+				candidate(3, LunchTopic.IT_CAREER),
+				candidate(4, LunchTopic.NETWORKING),
+				candidate(5, LunchTopic.CASUAL_CHAT)
+		);
+		MatchingProfilePair incompatiblePair = new MatchingProfilePair(
+				candidates.get(0).profileId(),
+				candidates.get(1).profileId()
+		);
+
+		MatchingPipelineResult result = pipeline.match(
+				bucket(candidates),
+				TIME_SLOT.minusMinutes(10),
+				Set.of(incompatiblePair)
+		);
+
+		assertThat(result.groups()).singleElement().satisfies(group ->
+				assertThat(group.requestIds()).containsExactly(
+						candidates.get(0).requestId(),
+						candidates.get(2).requestId(),
+						candidates.get(3).requestId(),
+						candidates.get(4).requestId()
+				)
+		);
+		assertThat(result.remainingCandidates())
+				.containsExactly(candidates.get(1));
 	}
 
 	private MatchingBucket bucket(List<MatchingCandidate> candidates) {

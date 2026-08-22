@@ -29,8 +29,57 @@ public class LunchMatchingPipeline {
 			MatchingBucket bucket,
 			LocalDateTime now
 	) {
+		return match(bucket, now, Set.of());
+	}
+
+	public MatchingPipelineResult match(
+			MatchingBucket bucket,
+			LocalDateTime now,
+			Set<MatchingProfilePair> incompatiblePairs
+	) {
 		Objects.requireNonNull(bucket, "bucket must not be null");
 		Objects.requireNonNull(now, "now must not be null");
+		Set<MatchingProfilePair> normalizedPairs = Set.copyOf(
+				Objects.requireNonNull(
+						incompatiblePairs,
+						"incompatiblePairs must not be null"
+				)
+		);
+		List<MatchingCandidate> excluded = new ArrayList<>();
+		MatchingBucket currentBucket = bucket;
+		MatchingPipelineResult result;
+
+		do {
+			result = matchUnconstrained(currentBucket, now);
+			MatchingCandidate candidateToExclude = findCandidateToExclude(
+					result.groups(),
+					normalizedPairs
+			);
+			if (candidateToExclude == null) {
+				List<MatchingCandidate> remaining = new ArrayList<>(
+						result.remainingCandidates()
+				);
+				remaining.addAll(excluded);
+				return new MatchingPipelineResult(
+						result.groups(),
+						remaining.stream()
+								.sorted(MatchingSupport.CANDIDATE_ORDER)
+								.toList()
+				);
+			}
+			excluded.add(candidateToExclude);
+			currentBucket = currentBucket.withCandidates(
+					currentBucket.candidates().stream()
+							.filter(candidate -> !candidate.equals(candidateToExclude))
+							.toList()
+			);
+		} while (true);
+	}
+
+	private MatchingPipelineResult matchUnconstrained(
+			MatchingBucket bucket,
+			LocalDateTime now
+	) {
 		MatchingBucket currentBucket = bucket.withCandidates(
 				bucket.candidates().stream()
 						.sorted(MatchingSupport.CANDIDATE_ORDER)
@@ -54,6 +103,33 @@ public class LunchMatchingPipeline {
 				groups,
 				currentBucket.candidates()
 		);
+	}
+
+	private MatchingCandidate findCandidateToExclude(
+			List<MatchingGroup> groups,
+			Set<MatchingProfilePair> incompatiblePairs
+	) {
+		for (MatchingGroup group : groups) {
+			for (int firstIndex = 0;
+					firstIndex < group.candidates().size();
+					firstIndex++) {
+				for (int secondIndex = firstIndex + 1;
+						secondIndex < group.candidates().size();
+						secondIndex++) {
+					MatchingCandidate first = group.candidates().get(firstIndex);
+					MatchingCandidate second = group.candidates().get(secondIndex);
+					if (incompatiblePairs.contains(new MatchingProfilePair(
+							first.profileId(),
+							second.profileId()
+					))) {
+						return MatchingSupport.CANDIDATE_ORDER.compare(first, second) > 0
+								? first
+								: second;
+					}
+				}
+			}
+		}
+		return null;
 	}
 
 	private void validateResult(
