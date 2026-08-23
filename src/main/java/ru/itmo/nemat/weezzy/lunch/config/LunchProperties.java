@@ -23,7 +23,8 @@ public record LunchProperties(
 		@NotNull Duration extensionResponseTimeout,
 		@NotNull Duration groupDuration,
 		@Valid @NotNull Matching matching,
-		@Valid @NotNull Lifecycle lifecycle
+		@Valid @NotNull Lifecycle lifecycle,
+		@Valid @NotNull Chat chat
 ) {
 	public record Matching(
 			boolean enabled,
@@ -44,6 +45,31 @@ public record LunchProperties(
 			@Min(1) int batchSize
 	) {
 		@AssertTrue(message = "lunch lifecycle fixed delay must be positive")
+		public boolean hasPositiveFixedDelay() {
+			return fixedDelay != null
+					&& !fixedDelay.isZero()
+					&& !fixedDelay.isNegative();
+		}
+	}
+
+	public record Chat(
+			@NotNull Duration retention,
+			@Valid @NotNull Cleanup cleanup
+	) {
+		@AssertTrue(message = "lunch chat retention must be positive")
+		public boolean hasPositiveRetention() {
+			return retention != null
+					&& !retention.isZero()
+					&& !retention.isNegative();
+		}
+	}
+
+	public record Cleanup(
+			boolean enabled,
+			@NotNull Duration fixedDelay,
+			@Min(1) int batchSize
+	) {
+		@AssertTrue(message = "lunch chat cleanup fixed delay must be positive")
 		public boolean hasPositiveFixedDelay() {
 			return fixedDelay != null
 					&& !fixedDelay.isZero()

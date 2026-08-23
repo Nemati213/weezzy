@@ -28,6 +28,12 @@ app:
       enabled: ${LUNCH_LIFECYCLE_ENABLED:true}
       fixed-delay: ${LUNCH_LIFECYCLE_FIXED_DELAY:PT1M}
       batch-size: ${LUNCH_LIFECYCLE_BATCH_SIZE:100}
+    chat:
+      retention: ${LUNCH_CHAT_RETENTION:P7D}
+      cleanup:
+        enabled: ${LUNCH_CHAT_CLEANUP_ENABLED:true}
+        fixed-delay: ${LUNCH_CHAT_CLEANUP_FIXED_DELAY:PT1H}
+        batch-size: ${LUNCH_CHAT_CLEANUP_BATCH_SIZE:500}
   profile-photo:
     max-file-size: ${PROFILE_PHOTO_MAX_FILE_SIZE:10485760}
     max-photos: ${PROFILE_PHOTO_MAX_COUNT:6}
