@@ -192,6 +192,10 @@ LUNCH_MATCHING_BUCKET_BATCH_SIZE=50
 LUNCH_LIFECYCLE_ENABLED=true
 LUNCH_LIFECYCLE_FIXED_DELAY=PT1M
 LUNCH_LIFECYCLE_BATCH_SIZE=100
+LUNCH_CHAT_RETENTION=P7D
+LUNCH_CHAT_CLEANUP_ENABLED=true
+LUNCH_CHAT_CLEANUP_FIXED_DELAY=PT1H
+LUNCH_CHAT_CLEANUP_BATCH_SIZE=500
 OUTBOX_WORKER_FIXED_DELAY=PT1S
 OUTBOX_WORKER_BATCH_SIZE=50
 OUTBOX_WORKER_MAX_ATTEMPTS=5
@@ -453,6 +457,8 @@ POST /api/locations         ADMIN
 | `DELETE` | `/api/lunch/requests/me` | Отменить заявку до формирования группы |
 | `POST` | `/api/lunch/requests/me/extend` | Принять предложение продления |
 | `GET` | `/api/lunch/groups/me` | Получить активную группу и участников |
+| `POST` | `/api/lunch/groups/me/messages` | Отправить сообщение в активную группу |
+| `GET` | `/api/lunch/groups/me/messages` | Получить сообщения активной группы |
 
 Пример создания заявки:
 
@@ -477,6 +483,28 @@ Matching использует точное совпадение `location + time
 через transactional outbox. Невалидная группа отменяется до начала обеда;
 eligible-заявки возвращаются в поиск. Активная группа автоматически завершается
 через `LUNCH_GROUP_DURATION`. Ответ группы не раскрывает Telegram.
+
+Чат доступен только текущим участникам группы со статусом `ACTIVE`. После
+`COMPLETED` или `CANCELLED` чтение и отправка запрещены. Отправитель всегда
+определяется из JWT. Для идемпотентной отправки клиент передаёт UUID сообщения:
+
+```json
+{
+  "clientMessageId": "00000000-0000-0000-0000-000000000000",
+  "content": "Встречаемся у главного входа"
+}
+```
+
+Первая отправка возвращает `201`, идентичный retry — `200`. Повторное
+использование `clientMessageId` с другим текстом возвращает `409`.
+
+История читается cursor-параметрами `before` и `after`, которые нельзя передавать
+одновременно. `before` загружает более старые сообщения, `after` используется для
+polling новых. Допустимый `limit` — от 1 до 100, значение по умолчанию — 50. Ответ
+содержит `nextBeforeCursor` и `nextAfterCursor`; сообщения возвращаются от старых
+к новым. Email, Telegram, внутренний user ID и `clientMessageId` не раскрываются.
+Сообщения удаляются batch-воркером через `LUNCH_CHAT_RETENTION` после завершения
+или отмены группы; активные группы cleanup не затрагивает.
 
 ### Уведомления и модерация
 
