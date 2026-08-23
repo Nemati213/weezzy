@@ -18,7 +18,7 @@ public class LunchGroupService {
 		LunchGroup group = queryRepository.findCurrentGroupByUserId(
 				userId,
 				LunchGroupStatus.ACTIVE
-		).orElseThrow(() -> new LunchGroupNotFoundException(userId));
+		).orElseThrow(LunchGroupNotFoundException::new);
 		List<LunchGroupMember> members = queryRepository.findMembers(group.getId());
 		return LunchGroupResponse.from(group, members);
 	}

@@ -146,7 +146,9 @@ class LunchGroupApiAndLifecycleTests {
 		createMember(group, participant.profile());
 
 		mockMvc.perform(outsider.user().authorize(get("/api/lunch/groups/me")))
-				.andExpect(status().isNotFound());
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message")
+						.value("Active lunch group not found"));
 		mockMvc.perform(get("/api/lunch/groups/me"))
 				.andExpect(status().isUnauthorized());
 	}
