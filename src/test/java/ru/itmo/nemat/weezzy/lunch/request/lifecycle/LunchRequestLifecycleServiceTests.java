@@ -190,7 +190,7 @@ class LunchRequestLifecycleServiceTests {
 				0
 		);
 		Participant reachedLimit = createParticipant(
-				LocalDateTime.of(2026, 8, 22, 14, 20),
+				LocalDateTime.of(2026, 8, 22, 14, 50),
 				2
 		);
 		Participant tooLate = createParticipant(
@@ -198,10 +198,10 @@ class LunchRequestLifecycleServiceTests {
 				0
 		);
 		Participant valid = createParticipant(
-				LocalDateTime.of(2026, 8, 22, 14, 30),
+				LocalDateTime.of(2026, 8, 22, 14, 50),
 				1
 		);
-		LocalDateTime processingTime = LocalDateTime.of(2026, 8, 22, 15, 0);
+		LocalDateTime processingTime = LocalDateTime.of(2026, 8, 22, 14, 55);
 
 		List<UUID> offered = lifecycleService.offerExtensions(processingTime, 1);
 

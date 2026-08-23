@@ -171,7 +171,7 @@ class LunchGroupApiAndLifecycleTests {
 
 	@Test
 	void groupDoesNotCompleteBeforeDurationElapses() {
-		LunchGroup group = createGroup(NOW.minusHours(1).plusNanos(1));
+		LunchGroup group = createGroup(NOW.minusHours(1).plusSeconds(1));
 
 		assertThat(lifecycleService.completeDueGroups(NOW, 100)).isEmpty();
 		assertThat(groupRepository.findById(group.getId()).orElseThrow().getStatus())

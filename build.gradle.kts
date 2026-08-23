@@ -7,6 +7,8 @@ plugins {
 group = "ru.itmo.nemat"
 version = "0.0.1-SNAPSHOT"
 
+val mockitoAgent by configurations.creating
+
 java {
 	toolchain {
 		languageVersion = JavaLanguageVersion.of(21)
@@ -45,6 +47,9 @@ dependencies {
 	testCompileOnly("org.projectlombok:lombok")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 	testAnnotationProcessor("org.projectlombok:lombok")
+	mockitoAgent("org.mockito:mockito-core") {
+		isTransitive = false
+	}
 }
 
 tasks.withType<Test> {
@@ -52,4 +57,6 @@ tasks.withType<Test> {
 	systemProperty("app.security.access-token-revocation.enabled", "false")
 	systemProperty("app.outbox.worker.enabled", "false")
 	systemProperty("app.outbox.cleanup.enabled", "false")
+	systemProperty("spring.test.context.cache.maxSize", "8")
+	jvmArgs("-javaagent:${mockitoAgent.asPath}")
 }
