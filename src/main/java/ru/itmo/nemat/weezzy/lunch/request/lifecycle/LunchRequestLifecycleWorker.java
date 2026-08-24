@@ -1,5 +1,6 @@
 package ru.itmo.nemat.weezzy.lunch.request.lifecycle;
 
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -22,21 +23,25 @@ import java.util.UUID;
 )
 public class LunchRequestLifecycleWorker {
 	private final LunchRequestLifecycleService lifecycleService;
+	private final LunchRequestLifecycleMetrics metrics;
 	private final LunchProperties properties;
 	private final Clock clock;
 
 	@Scheduled(fixedDelayString = "${app.lunch.lifecycle.fixed-delay}")
 	public void processLifecycle() {
+		Timer.Sample sample = metrics.start();
 		try {
 			LocalDateTime now = now();
 			List<UUID> expiredRequestIds = lifecycleService.expireRequests(
 					now,
 					properties.lifecycle().batchSize()
 			);
+			metrics.recordExpiredRequests(expiredRequestIds.size());
 			List<UUID> offeredRequestIds = lifecycleService.offerExtensions(
 					now,
 					properties.lifecycle().batchSize()
 			);
+			metrics.recordOfferedExtensions(offeredRequestIds.size());
 			if (!expiredRequestIds.isEmpty()) {
 				log.info(
 						"Expired {} lunch requests",
@@ -49,7 +54,9 @@ public class LunchRequestLifecycleWorker {
 						offeredRequestIds.size()
 				);
 			}
+			metrics.recordRunSuccess(sample);
 		} catch (Exception exception) {
+			metrics.recordRunFailure(sample);
 			log.error("Lunch request lifecycle processing failed", exception);
 		}
 	}
