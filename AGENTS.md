@@ -161,26 +161,31 @@ docker compose up -d
   `SEARCHING`, а невалидные переводит в `EXPIRED`.
 - `GET /api/lunch/groups/me` доступен только участнику активной группы и не раскрывает
   Telegram.
+- Временный REST-чат работает через `POST/GET /api/lunch/groups/me/messages`:
+  отправка идемпотентна по `clientMessageId`, история использует cursor pagination
+  `before/after`, сообщения возвращаются в хронологическом порядке.
+- Чат доступен только current membership группы со статусом `ACTIVE`; после
+  `COMPLETED`/`CANCELLED` чтение и отправка запрещены. Ответы не раскрывают Telegram,
+  email, внутренний user ID и `clientMessageId`.
+- Сообщения закрытых групп удаляются batch cleanup-воркером после настраиваемого
+  retention. Cleanup использует `SKIP LOCKED`, безопасен для нескольких инстансов и
+  публикует метрики запусков, ошибок, длительности и количества удалений.
+- Chat send/lifecycle races, конкурентный cleanup, pagination и retention проверены
+  интеграционными тестами на PostgreSQL. Полный Testcontainers suite проходит.
 - Длительности окна, шага слотов, продления, ответа и активной группы задаются через
-  `app.lunch`.
+  `app.lunch`; retention и cleanup чата — через `app.lunch.chat`.
 
 ## 7. Оставшиеся задачи по экспресс-обедам
 
-1. Временный REST-чат:
-   - сообщения внутри lunch-группы и cursor pagination;
-   - отправка и чтение только для current membership активной группы;
-   - запрет доступа после `COMPLETED`/`CANCELLED`;
-   - retention cleanup сообщений; WebSocket в MVP не использовать.
-2. «Хочу остаться на связи»:
+1. «Хочу остаться на связи»:
    - отдельные выборы участников внутри lunch-группы;
    - Telegram раскрывать только после взаимного выбора;
    - не создавать обычный `ProfileMatch`;
    - уведомление о взаимности публиковать через transactional outbox.
-3. Финальное укрепление:
-   - полный прогон Testcontainers suite с запущенным Docker Desktop;
-   - конкурентные интеграционные тесты chat/contact flows и cleanup;
-   - метрики и наблюдаемость для matching/lifecycle/chat workers;
-   - проверка временных границ, retry и retention на реальном PostgreSQL.
+2. Финальное укрепление:
+   - конкурентные интеграционные тесты contact flow и transactional outbox;
+   - метрики и наблюдаемость для matching/lifecycle workers;
+   - проверка идемпотентности, retry и гонок contact flow на реальном PostgreSQL.
 
 ## 8. Другие известные задачи
 
