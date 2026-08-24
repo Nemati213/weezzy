@@ -1,5 +1,6 @@
 package ru.itmo.nemat.weezzy.lunch.matching;
 
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -23,18 +24,27 @@ import java.util.List;
 public class LunchMatchingWorker {
 	private final LunchMatchingRepository matchingRepository;
 	private final LunchMatchingBucketProcessor bucketProcessor;
+	private final LunchMatchingMetrics metrics;
 	private final LunchProperties properties;
 	private final Clock clock;
 
 	@Scheduled(fixedDelayString = "${app.lunch.matching.fixed-delay}")
 	public void processBuckets() {
-		LocalDateTime discoveryTime = now();
-		List<MatchingBucketKey> bucketKeys = matchingRepository.findBucketKeys(
-				discoveryTime,
-				PageRequest.of(0, properties.matching().bucketBatchSize())
-		);
-		for (MatchingBucketKey bucketKey : bucketKeys) {
-			processOne(bucketKey);
+		Timer.Sample sample = metrics.start();
+		try {
+			LocalDateTime discoveryTime = now();
+			List<MatchingBucketKey> bucketKeys = matchingRepository.findBucketKeys(
+					discoveryTime,
+					PageRequest.of(0, properties.matching().bucketBatchSize())
+			);
+			metrics.recordDiscoveredBuckets(bucketKeys.size());
+			for (MatchingBucketKey bucketKey : bucketKeys) {
+				processOne(bucketKey);
+			}
+			metrics.recordRunSuccess(sample);
+		} catch (RuntimeException | Error exception) {
+			metrics.recordRunFailure(sample);
+			throw exception;
 		}
 	}
 
@@ -44,6 +54,7 @@ public class LunchMatchingWorker {
 					bucketKey,
 					now()
 			);
+			metrics.recordBucketResult(result);
 			if (result.claimed() && result.formedGroupCount() > 0) {
 				log.info(
 						"Formed {} lunch groups with {} participants for bucket {} at {}",
@@ -54,6 +65,7 @@ public class LunchMatchingWorker {
 				);
 			}
 		} catch (Exception exception) {
+			metrics.recordBucketFailure();
 			log.error(
 					"Lunch matching failed for bucket {} at {}",
 					bucketKey.locationId(),
