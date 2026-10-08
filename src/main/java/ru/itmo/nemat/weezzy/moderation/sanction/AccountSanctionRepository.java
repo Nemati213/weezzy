@@ -52,6 +52,21 @@ public interface AccountSanctionRepository extends JpaRepository<AccountSanction
 	);
 
 	@Query("""
+			SELECT COUNT(sanction)
+			FROM AccountSanction sanction
+			WHERE sanction.emailFingerprint = :emailFingerprint
+				AND sanction.status = 'ACTIVE'
+				AND (
+					sanction.type = 'PERMANENT_BAN'
+					OR sanction.expiresAt > :now
+				)
+			""")
+	long countEffectiveByEmailFingerprint(
+			@Param("emailFingerprint") String emailFingerprint,
+			@Param("now") LocalDateTime now
+	);
+
+	@Query("""
 			SELECT DISTINCT sanction.targetUserId
 			FROM AccountSanction sanction
 			WHERE sanction.targetUserId IN :targetUserIds

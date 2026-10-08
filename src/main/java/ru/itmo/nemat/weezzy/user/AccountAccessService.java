@@ -6,6 +6,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.nemat.weezzy.moderation.sanction.AccountSanction;
 import ru.itmo.nemat.weezzy.moderation.sanction.AccountSanctionRepository;
 import ru.itmo.nemat.weezzy.moderation.sanction.AccountSanctionType;
+import ru.itmo.nemat.weezzy.moderation.sanction.SanctionEmailFingerprintService;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -17,6 +18,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AccountAccessService {
 	private final AccountSanctionRepository sanctionRepository;
+	private final SanctionEmailFingerprintService emailFingerprintService;
 
 	@Transactional(readOnly = true)
 	public Optional<AccountSanction> findRestriction(UUID userId) {
@@ -34,6 +36,15 @@ public class AccountAccessService {
 	@Transactional(readOnly = true)
 	public boolean isAccessAllowed(UUID userId) {
 		return findRestriction(userId).isEmpty();
+	}
+
+	@Transactional(readOnly = true)
+	public boolean isEmailRestrictedForRegistration(String email) {
+		String fingerprint = emailFingerprintService.fingerprint(email);
+		return sanctionRepository.countEffectiveByEmailFingerprint(
+				fingerprint,
+				LocalDateTime.now()
+		) > 0;
 	}
 
 	@Transactional(readOnly = true)

@@ -18,6 +18,8 @@ spring:
         format_sql: true
 
 app:
+  security:
+    sanction-email-hmac-key: weezzy-local-sanction-email-key-change-in-production-2026
   storage:
     endpoint: ${S3_ENDPOINT:http://localhost:9000}
     region: ${S3_REGION:us-east-1}

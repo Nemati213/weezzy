@@ -46,6 +46,7 @@ app:
     api-call-attempt-timeout: ${S3_API_CALL_ATTEMPT_TIMEOUT:PT7S}
     api-call-timeout: ${S3_API_CALL_TIMEOUT:PT15S}
   security:
+    sanction-email-hmac-key: ${SANCTION_EMAIL_HMAC_KEY}
     jwt:
       secret: ${JWT_SECRET}
       access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT15M}

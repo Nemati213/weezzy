@@ -21,7 +21,7 @@ Weezzy - backend для внутреннего ITMO-сервиса нетвор�
 - Java 21, Spring Boot 4.1, Gradle Kotlin DSL;
 - Spring MVC, Validation, Security, Data JPA/Hibernate;
 - PostgreSQL 17/pgvector и Flyway;
-- Redis только для auth rate limiting;
+- Redis для auth rate limiting и отзыва access-токенов;
 - Spring Mail, AWS SDK и MinIO/S3-compatible storage;
 - JUnit 5, Spring Boot Test, MockMvc и Testcontainers.
 
@@ -34,8 +34,9 @@ Weezzy - backend для внутреннего ITMO-сервиса нетвор�
 - MinIO S3 API локально доступен на `http://localhost:9000`;
 - MinIO Console локально доступна на `http://localhost:9001`.
 
-Redis используется для rate limiting auth-операций и не является основным хранилищем
-бизнес-данных. Не расширять его использование без явной задачи.
+Redis используется для rate limiting auth-операций и отзыва access-токенов.
+Он не является хранилищем бизнес-данных. Не расширять его использование без явной
+задачи.
 
 ## 3. Архитектура и структура (Project Structure)
 
@@ -90,13 +91,15 @@ Spring/JPA rules:
 
 Security rules:
 
-- без JWT доступны register, login, refresh, подтверждение/повторная отправка email и
-  восстановление пароля; точный список задан в `SecurityConfig`;
-- все остальные endpoints требуют authentication;
+- без JWT доступны register, login, refresh, подтверждение/повторная отправка email,
+  восстановление пароля, health probes и Swagger/OpenAPI; точный список задан в
+  `SecurityConfig`;
+- остальные endpoints требуют authentication;
 - текущий user берется через `@AuthenticationPrincipal JwtAuthenticatedUser`;
 - user-owned endpoints должны быть вида `/me`, например `/api/profiles/me`;
 - не принимать `userId` или `sourceProfileId` из body/path там, где это текущий user;
-- административные endpoints находятся под `/api/admin/**` и требуют роль `ADMIN`.
+- endpoints под `/api/admin/**` требуют роль `ADMIN`; отдельные операции управления
+  каталогами вне этого префикса также требуют `ADMIN`, согласно `SecurityConfig`.
 
 Error handling:
 
@@ -189,7 +192,8 @@ docker compose up -d
 - Следующая крупная продуктовая ветка - поиск людей в команду:
   структурированные opportunities/team requests с ролями, навыками, дедлайном,
   размером команды, откликами, приглашениями, статусами и уведомлениями.
-- Закрыть обход постоянной блокировки через удаление аккаунта и повторную регистрацию
-  на тот же email: хранить privacy-safe HMAC fingerprint нормализованного email.
+- Обход санкций через удаление аккаунта и повторную регистрацию на тот же email
+  закрыт: HMAC fingerprint нормализованного email сохраняется в санкции. Постоянный
+  бан блокирует регистрацию до отзыва, временный — до истечения или отзыва.
 - Если заблокированному санкцией пользователю потребуется доставка решения, добавить
   внешний канал, например email; in-app inbox при блокировке намеренно недоступен.

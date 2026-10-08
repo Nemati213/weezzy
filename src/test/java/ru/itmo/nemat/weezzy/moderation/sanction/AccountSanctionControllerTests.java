@@ -34,6 +34,8 @@ import ru.itmo.nemat.weezzy.user.accountdeletion.AccountDeletionService;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -714,6 +716,81 @@ class AccountSanctionControllerTests {
 				.andExpect(jsonPath("$.targetUserId").value(target.user().userId()))
 				.andExpect(jsonPath("$.targetProfileId").value(target.profileId()))
 				.andExpect(jsonPath("$.reason").value("Audit must survive"));
+	}
+
+	@Test
+	void permanentBanBlocksRegistrationAfterAccountDeletionUntilRevoked()
+			throws Exception {
+		AuthenticatedTestUser admin = registerAdmin();
+		SanctionTarget target = registerTarget("Permanent Ban Registration Target");
+		UUID targetUserId = UUID.fromString(target.user().userId());
+		String targetEmail = userRepository.findById(targetUserId)
+				.orElseThrow().getEmail();
+		String sanctionId = createSanction(
+				admin,
+				target.user().userId(),
+				AccountSanctionType.PERMANENT_BAN,
+				"Registration must remain blocked",
+				null,
+				null
+		);
+		assertThat(sanctionRepository.findById(UUID.fromString(sanctionId))
+				.orElseThrow().getEmailFingerprint()).matches("[0-9a-f]{64}");
+		mockMvc.perform(target.user().authorize(delete("/api/users/me"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(objectMapper.writeValueAsString(Map.of(
+						"currentPassword", PASSWORD
+				))))
+				.andExpect(status().isForbidden());
+		assertThat(userRepository.existsById(targetUserId)).isTrue();
+
+		accountDeletionService.deleteAccount(targetUserId, PASSWORD);
+
+		registerEmail(targetEmail.toUpperCase(Locale.ROOT))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message")
+						.value("Registration is not allowed"));
+		assertThat(userRepository.findByEmailIgnoreCase(targetEmail)).isEmpty();
+
+		revoke(admin, sanctionId, "Ban revoked");
+		registerEmail(targetEmail).andExpect(status().isCreated());
+	}
+
+	@Test
+	void expiredTemporarySuspensionDoesNotBlockRegistration()
+			throws Exception {
+		AuthenticatedTestUser admin = registerAdmin();
+		SanctionTarget target = registerTarget("Temporary Ban Registration Target");
+		UUID targetUserId = UUID.fromString(target.user().userId());
+		String targetEmail = userRepository.findById(targetUserId)
+				.orElseThrow().getEmail();
+		String sanctionId = createSanction(
+				admin,
+				target.user().userId(),
+				AccountSanctionType.TEMPORARY_SUSPENSION,
+				"Temporary registration restriction",
+				LocalDateTime.now().plusDays(1),
+				null
+		);
+
+		accountDeletionService.deleteAccount(targetUserId, PASSWORD);
+
+		registerEmail(targetEmail).andExpect(status().isForbidden());
+		jdbcTemplate.update(
+				"UPDATE account_sanctions SET expires_at = ? WHERE id = ?",
+				LocalDateTime.now().minusMinutes(1),
+				UUID.fromString(sanctionId)
+		);
+		registerEmail(targetEmail).andExpect(status().isCreated());
+	}
+
+	private ResultActions registerEmail(String email) throws Exception {
+		return mockMvc.perform(post("/api/auth/register")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(objectMapper.writeValueAsString(Map.of(
+						"email", email,
+						"password", PASSWORD
+				))));
 	}
 
 	private SanctionTarget registerTarget(String displayName) throws Exception {

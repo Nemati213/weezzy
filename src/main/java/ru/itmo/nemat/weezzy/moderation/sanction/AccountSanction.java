@@ -64,6 +64,9 @@ public class AccountSanction {
 	@Column(length = 1000)
 	private String revocationReason;
 
+	@Column(length = 64)
+	private String emailFingerprint;
+
 	@PrePersist
 	void onCreate() {
 		LocalDateTime now = LocalDateTime.now();

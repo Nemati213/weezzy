@@ -39,6 +39,7 @@ public class AccountSanctionService {
 	private final AuthSessionService authSessionService;
 	private final AccessTokenRevocationService accessTokenRevocationService;
 	private final OutboxEventService outboxEventService;
+	private final SanctionEmailFingerprintService emailFingerprintService;
 
 	@Transactional
 	public AccountSanction create(
@@ -69,12 +70,15 @@ public class AccountSanctionService {
 				targetUserId
 		);
 
+		String emailFingerprint = emailFingerprintService.fingerprint(targetUser.getEmail());
+
 		AccountSanction saved = createSanction(
 				targetUserId,
 				targetProfile,
 				sourceReport,
 				request,
-				moderator
+				moderator,
+				emailFingerprint
 		);
 
 		authSessionService.revokeAllForSanction(targetUserId);
@@ -269,7 +273,8 @@ public class AccountSanctionService {
 			Optional<Profile> profile,
 			ProfileReport report,
 			CreateAccountSanctionRequest request,
-			User moderator
+			User moderator,
+			String emailFingerprint
 	) {
 		AccountSanction sanction = new AccountSanction();
 		sanction.setTargetUserId(userId);
@@ -280,6 +285,7 @@ public class AccountSanctionService {
 		sanction.setReason(request.reason().trim());
 		sanction.setExpiresAt(request.expiresAt());
 		sanction.setCreatedByUserId(moderator.getId());
+		sanction.setEmailFingerprint(emailFingerprint);
 
 		return sanctionRepository.save(sanction);
 	}

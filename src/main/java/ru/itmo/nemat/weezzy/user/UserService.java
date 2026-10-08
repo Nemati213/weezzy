@@ -5,7 +5,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -14,14 +13,17 @@ import java.util.UUID;
 public class UserService {
 	private final UserRepository userRepository;
 	private final PasswordEncoder passwordEncoder;
+	private final AccountAccessService accountAccessService;
 
 	@Transactional
 	public User register(String email, String rawPassword) {
-		String normalizedEmail = normalizeEmail(email);
+		String normalizedEmail = EmailNormalizer.normalize(email);
 		if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
 			throw new DuplicateUserException(normalizedEmail);
 		}
-
+		if (accountAccessService.isEmailRestrictedForRegistration(normalizedEmail)) {
+			throw new RegistrationRestrictedException();
+		}
 		User user = new User();
 		user.setEmail(normalizedEmail);
 		user.setPasswordHash(passwordEncoder.encode(rawPassword));
@@ -38,19 +40,19 @@ public class UserService {
 
 	@Transactional(readOnly = true)
 	public User findByEmail(String email) {
-		String normalizedEmail = normalizeEmail(email);
+		String normalizedEmail = EmailNormalizer.normalize(email);
 		return userRepository.findByEmailIgnoreCase(normalizedEmail)
 				.orElseThrow(() -> new UserNotFoundException(normalizedEmail));
 	}
 
 	@Transactional(readOnly = true)
 	public Optional<User> findOptionalByEmail(String email) {
-		return userRepository.findByEmailIgnoreCase(normalizeEmail(email));
+		return userRepository.findByEmailIgnoreCase(EmailNormalizer.normalize(email));
 	}
 
 	@Transactional(readOnly = true)
 	public User authenticate(String email, String rawPassword) {
-		String normalizedEmail = normalizeEmail(email);
+		String normalizedEmail = EmailNormalizer.normalize(email);
 		User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
 				.orElseThrow(InvalidCredentialsException::new);
 
@@ -78,9 +80,5 @@ public class UserService {
 	public void updatePassword(User user, String newRawPassword) {
 		user.setPasswordHash(passwordEncoder.encode(newRawPassword));
 		userRepository.save(user);
-	}
-
-	private String normalizeEmail(String email) {
-		return email.trim().toLowerCase(Locale.ROOT);
 	}
 }
