@@ -9,7 +9,8 @@ Weezzy - backend для внутреннего ITMO-сервиса нетвор�
 
 Основные возможности: auth с подтверждением email и refresh rotation, профили с
 фотографиями и signals, рекомендации, votes/matches/blocks, moderation,
-уведомления через outbox и экспресс-обеды. Onboarding контролирует активацию
+in-app уведомления и email решений о санкциях через outbox, экспресс-обеды.
+Onboarding контролирует активацию
 профиля. При удалении аккаунта персональные данные удаляются, а обезличенный
 профиль сохраняется для целостности истории.
 
@@ -104,7 +105,8 @@ Security rules:
 Error handling:
 
 - использовать кастомные exceptions, наследованные от:
-  `NotFoundException`, `ConflictException`, `BadRequestException`;
+  `NotFoundException`, `ConflictException`, `BadRequestException`,
+  `ForbiddenException`;
 - не кидать голый `RuntimeException` для ожидаемых бизнес-ошибок;
 - HTTP errors централизованы в `ApiExceptionHandler`;
 - validation errors идут через Bean Validation annotations и возвращают `400`;
@@ -195,8 +197,12 @@ docker compose up -d
 - Обход санкций через удаление аккаунта и повторную регистрацию на тот же email
   закрыт: HMAC fingerprint нормализованного email сохраняется в санкции. Постоянный
   бан блокирует регистрацию до отзыва, временный — до истечения или отзыва.
+  Production требует стабильный `SANCTION_EMAIL_HMAC_KEY` длиной от 32 байт;
+  замена ключа нарушает поиск ранее сохранённых fingerprints.
 - Доставка назначения и отзыва санкций по email подключена к transactional outbox:
   production использует SMTP, local — логирование. Ошибки отправки повторяются
   по retry policy outbox, удалённые получатели пропускаются. In-app inbox при
   блокировке намеренно недоступен. Интеграционные тесты используют mock sender;
   реальная доставка через production SMTP пока не проверена.
+  SMTP допускает повторную доставку при сбое между отправкой и commit outbox;
+  не обещать exactly-once для email.
