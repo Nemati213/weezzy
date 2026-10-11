@@ -8,14 +8,18 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mail.MailSendException;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import ru.itmo.nemat.weezzy.moderation.sanction.AccountSanctionType;
+import ru.itmo.nemat.weezzy.moderation.sanction.email.AccountSanctionEmailSender;
 import ru.itmo.nemat.weezzy.notification.Notification;
 import ru.itmo.nemat.weezzy.notification.NotificationRepository;
 import ru.itmo.nemat.weezzy.notification.NotificationType;
@@ -30,6 +34,7 @@ import ru.itmo.nemat.weezzy.security.JwtService;
 import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
 import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser.TestProfile;
 import ru.itmo.nemat.weezzy.user.UserRepository;
+import ru.itmo.nemat.weezzy.user.accountdeletion.AccountDeletionService;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
@@ -41,6 +46,12 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -98,6 +109,12 @@ class OutboxProcessingTests {
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private AccountDeletionService accountDeletionService;
+
+	@MockitoBean
+	private AccountSanctionEmailSender emailSender;
 
 	@DynamicPropertySource
 	static void postgresProperties(DynamicPropertyRegistry registry) {
@@ -256,6 +273,10 @@ class OutboxProcessingTests {
 				.containsEntry("type", "PERMANENT_BAN")
 				.containsEntry("reason", "Repeated abuse")
 				.doesNotContainKeys("expiresAt", "sourceReportId");
+		verify(emailSender).sendSanctionCreated(
+				emailOf(target), AccountSanctionType.PERMANENT_BAN,
+				"Repeated abuse", null
+		);
 	}
 
 	@Test
@@ -272,6 +293,7 @@ class OutboxProcessingTests {
 		assertThat(eventRepository.findById(event.getId()).orElseThrow().getStatus())
 				.isEqualTo(OutboxEventStatus.PROCESSED);
 		assertThat(notificationsForEvent(event.getId())).isEmpty();
+		verifyNoInteractions(emailSender);
 	}
 
 	@Test
@@ -316,6 +338,7 @@ class OutboxProcessingTests {
 				.containsEntry("type", "PERMANENT_BAN")
 				.containsEntry("revocationReason", "Appeal accepted")
 				.containsKey("revokedAt");
+		verify(emailSender).sendSanctionRevoked(emailOf(target), "Appeal accepted");
 	}
 
 	@Test
@@ -343,6 +366,7 @@ class OutboxProcessingTests {
 		assertThat(eventRepository.findById(eventId).orElseThrow().getStatus())
 				.isEqualTo(OutboxEventStatus.PROCESSED);
 		assertThat(notificationsForEvent(eventId)).isEmpty();
+		verifyNoInteractions(emailSender);
 	}
 
 	@Test
@@ -362,6 +386,98 @@ class OutboxProcessingTests {
 		assertThat(eventRepository.findById(event.getId()).orElseThrow().getStatus())
 				.isEqualTo(OutboxEventStatus.PROCESSED);
 		assertThat(notificationsForEvent(event.getId())).isEmpty();
+		verifyNoInteractions(emailSender);
+	}
+
+	@Test
+	void temporarySanctionEmailIncludesExpiration() throws Exception {
+		AuthenticatedTestUser admin = createAdmin();
+		TestProfile target = createProfile("Temporary Sanction Email Target");
+		createTemporarySanction(admin, target);
+		OutboxEvent event = onlyEvent(OutboxEventType.ACCOUNT_SANCTION_CREATED);
+		LocalDateTime expiresAt = LocalDateTime.parse(
+				String.valueOf(event.getPayload().get("expiresAt"))
+		);
+
+		claimAndProcess(event.getId(), LocalDateTime.now().plusMinutes(1));
+
+		verify(emailSender).sendSanctionCreated(
+				emailOf(target), AccountSanctionType.TEMPORARY_SUSPENSION,
+				"Temporary restriction", expiresAt
+		);
+	}
+
+	@Test
+	void deletedSanctionRecipientIsProcessedWithoutDelivery() throws Exception {
+		AuthenticatedTestUser admin = createAdmin();
+		TestProfile target = createProfile("Deleted Sanction Email Target");
+		createPermanentSanction(admin, target);
+		OutboxEvent event = onlyEvent(OutboxEventType.ACCOUNT_SANCTION_CREATED);
+		accountDeletionService.deleteAccount(
+				UUID.fromString(target.owner().userId()), "password123"
+		);
+
+		claimAndProcess(event.getId(), LocalDateTime.now().plusMinutes(1));
+
+		assertThat(eventRepository.findById(event.getId()).orElseThrow().getStatus())
+				.isEqualTo(OutboxEventStatus.PROCESSED);
+		assertThat(notificationsForEvent(event.getId())).isEmpty();
+		verifyNoInteractions(emailSender);
+	}
+
+	@Test
+	void deletedRevocationRecipientIsProcessedWithoutDelivery() throws Exception {
+		AuthenticatedTestUser admin = createAdmin();
+		TestProfile target = createProfile("Deleted Revocation Email Target");
+		String sanctionId = createPermanentSanction(admin, target);
+		revokeSanction(admin, sanctionId, "Appeal accepted");
+		OutboxEvent event = onlyEvent(OutboxEventType.ACCOUNT_SANCTION_REVOKED);
+		accountDeletionService.deleteAccount(
+				UUID.fromString(target.owner().userId()), "password123"
+		);
+
+		claimAndProcess(event.getId(), LocalDateTime.now().plusMinutes(1));
+
+		assertThat(eventRepository.findById(event.getId()).orElseThrow().getStatus())
+				.isEqualTo(OutboxEventStatus.PROCESSED);
+		assertThat(notificationsForEvent(event.getId())).isEmpty();
+		verifyNoInteractions(emailSender);
+	}
+
+	@Test
+	void sanctionEmailFailureRollsBackNotificationAndRetries() throws Exception {
+		AuthenticatedTestUser admin = createAdmin();
+		TestProfile target = createProfile("Retried Sanction Email Target");
+		createPermanentSanction(admin, target);
+		OutboxEvent event = onlyEvent(OutboxEventType.ACCOUNT_SANCTION_CREATED);
+		String email = emailOf(target);
+		MailSendException failure = new MailSendException("SMTP unavailable");
+		doThrow(failure).doNothing().when(emailSender).sendSanctionCreated(
+				eq(email), eq(AccountSanctionType.PERMANENT_BAN),
+				eq("Repeated abuse"), any()
+		);
+		LocalDateTime now = LocalDateTime.now().plusMinutes(1);
+		assertThat(claimAll(now)).contains(event.getId());
+
+		assertThatThrownBy(() -> processor.process(event.getId(), WORKER_ID, now))
+				.isSameAs(failure);
+		assertThat(notificationsForEvent(event.getId())).isEmpty();
+		assertThat(eventRepository.findById(event.getId()).orElseThrow().getStatus())
+				.isEqualTo(OutboxEventStatus.PROCESSING);
+
+		processor.recordFailure(event.getId(), WORKER_ID, failure, now);
+		OutboxEvent pending = eventRepository.findById(event.getId()).orElseThrow();
+		assertThat(pending.getStatus()).isEqualTo(OutboxEventStatus.PENDING);
+		assertThat(pending.getLastError()).contains("MailSendException");
+
+		claimAndProcess(event.getId(), pending.getNextAttemptAt().plusSeconds(1));
+
+		assertThat(eventRepository.findById(event.getId()).orElseThrow().getStatus())
+				.isEqualTo(OutboxEventStatus.PROCESSED);
+		assertThat(notificationsForEvent(event.getId())).hasSize(1);
+		verify(emailSender, times(2)).sendSanctionCreated(
+				email, AccountSanctionType.PERMANENT_BAN, "Repeated abuse", null
+		);
 	}
 
 	@Test
@@ -609,6 +725,11 @@ class OutboxProcessingTests {
 				.value();
 		assertThat(pending).isZero();
 		assertThat(failed).isEqualTo(1);
+	}
+
+	private String emailOf(TestProfile target) {
+		return userRepository.findById(UUID.fromString(target.owner().userId()))
+				.orElseThrow().getEmail();
 	}
 
 	private void claimAndProcess(UUID eventId, LocalDateTime now) {

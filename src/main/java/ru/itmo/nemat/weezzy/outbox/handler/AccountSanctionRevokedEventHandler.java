@@ -3,11 +3,13 @@ package ru.itmo.nemat.weezzy.outbox.handler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import ru.itmo.nemat.weezzy.moderation.sanction.AccountSanctionService;
+import ru.itmo.nemat.weezzy.moderation.sanction.email.AccountSanctionEmailSender;
 import ru.itmo.nemat.weezzy.notification.NotificationService;
 import ru.itmo.nemat.weezzy.notification.NotificationType;
 import ru.itmo.nemat.weezzy.outbox.OutboxEvent;
 import ru.itmo.nemat.weezzy.outbox.OutboxEventType;
 import ru.itmo.nemat.weezzy.outbox.payload.AccountSanctionRevokedPayload;
+import ru.itmo.nemat.weezzy.user.UserRepository;
 
 import java.util.Map;
 
@@ -17,6 +19,8 @@ public class AccountSanctionRevokedEventHandler implements OutboxEventHandler {
 	private final OutboxPayloadMapper payloadMapper;
 	private final AccountSanctionService sanctionService;
 	private final NotificationService notificationService;
+	private final AccountSanctionEmailSender emailSender;
+	private final UserRepository userRepository;
 
 	@Override
 	public OutboxEventType supportedType() {
@@ -38,6 +42,11 @@ public class AccountSanctionRevokedEventHandler implements OutboxEventHandler {
 			return;
 		}
 
+		var recipient = userRepository.findById(payload.recipientUserId());
+		if (recipient.isEmpty()) {
+			return;
+		}
+
 		notificationService.createIfAbsent(
 				payload.recipientUserId(),
 				NotificationType.ADMIN_SANCTION_REVOKED,
@@ -48,6 +57,10 @@ public class AccountSanctionRevokedEventHandler implements OutboxEventHandler {
 						"revokedAt", payload.revokedAt()
 				),
 				event.getId()
+		);
+		emailSender.sendSanctionRevoked(
+				recipient.get().getEmail(),
+				payload.revocationReason()
 		);
 	}
 }
