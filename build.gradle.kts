@@ -54,6 +54,7 @@ dependencies {
 
 tasks.withType<Test> {
 	useJUnitPlatform()
+	maxHeapSize = "1g"
 	systemProperty("app.security.access-token-revocation.enabled", "false")
 	systemProperty("app.outbox.worker.enabled", "false")
 	systemProperty("app.outbox.cleanup.enabled", "false")
