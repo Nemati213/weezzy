@@ -54,6 +54,10 @@ public class Team {
 	@Column(name = "updated_at", nullable = false)
 	private LocalDateTime updatedAt;
 
+	public boolean isOwnedBy(UUID profileId) {
+		return ownerProfile.getId().equals(profileId);
+	}
+
 	@PrePersist
 	void onCreate() {
 		LocalDateTime now = LocalDateTime.now();

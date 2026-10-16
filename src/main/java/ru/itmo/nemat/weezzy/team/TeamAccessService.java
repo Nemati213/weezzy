@@ -4,65 +4,103 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import ru.itmo.nemat.weezzy.connection.block.ProfileBlockService;
 import ru.itmo.nemat.weezzy.profile.Profile;
-import ru.itmo.nemat.weezzy.profile.ProfileNotFoundException;
-import ru.itmo.nemat.weezzy.profile.ProfileRepository;
-import ru.itmo.nemat.weezzy.user.UserNotFoundException;
-import ru.itmo.nemat.weezzy.user.UserRepository;
+import ru.itmo.nemat.weezzy.profile.ProfileService;
+import ru.itmo.nemat.weezzy.profile.ProfileStatus;
+import ru.itmo.nemat.weezzy.profile.lock.AccountProfileLockService;
+import ru.itmo.nemat.weezzy.team.member.TeamMemberId;
+import ru.itmo.nemat.weezzy.team.member.TeamMemberRepository;
+import ru.itmo.nemat.weezzy.user.AccountAccessService;
 
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class TeamAccessService {
 	private final TeamRepository teamRepository;
-	private final ProfileRepository profileRepository;
-	private final UserRepository userRepository;
+	private final ProfileService profileService;
+	private final AccountAccessService accountAccessService;
+	private final AccountProfileLockService lockService;
+	private final TeamMemberRepository memberRepository;
+	private final ProfileBlockService blockService;
 
 	@Transactional(readOnly = true)
-	public UUID currentProfileId(UUID userId) {
-		return profileRepository.findIdByUserId(userId)
-				.orElseThrow(() -> new ProfileNotFoundException(userId));
+	public Team requireVisibleForUser(UUID userId, UUID teamId) {
+		accountAccessService.ensureAccessAllowed(userId);
+		Team team = teamRepository.findByIdAndStatus(teamId, TeamStatus.ACTIVE)
+				.orElseThrow(() -> new TeamNotFoundException(teamId));
+		Profile owner = team.getOwnerProfile();
+		if (owner.getStatus() != ProfileStatus.ACTIVE || owner.getUser() == null
+				|| !accountAccessService.isAccessAllowed(owner.getUser().getId())
+				|| !memberRepository.existsById(new TeamMemberId(teamId, owner.getId()))) {
+			throw new TeamNotFoundException(teamId);
+		}
+		UUID viewerProfileId = profileService.findOptionalIdByUserId(userId).orElse(null);
+		if (viewerProfileId != null
+				&& blockService.isBlockedBetween(viewerProfileId, owner.getId())) {
+			throw new TeamNotFoundException(teamId);
+		}
+		return team;
 	}
 
 	@Transactional(readOnly = true)
-	public void ensureOwner(UUID userId, UUID ownerProfileId) {
-		if (profileRepository.findOwnerUserId(ownerProfileId).filter(userId::equals).isEmpty()) {
+	public boolean isOwner(UUID profileId, UUID teamId) {
+		return teamRepository.findOwnerProfileId(teamId).filter(profileId::equals).isPresent();
+	}
+
+	@Transactional(readOnly = true)
+	public Team requireOwnedByUser(UUID userId, UUID teamId) {
+		accountAccessService.ensureAccessAllowed(userId);
+		Team team = teamRepository.findById(teamId)
+				.orElseThrow(() -> new TeamNotFoundException(teamId));
+		ensureOwner(team, actorProfileIdForUser(userId));
+		return team;
+	}
+
+	@Transactional(propagation = Propagation.MANDATORY)
+	public Team requireOwnedForUpdate(UUID userId, UUID teamId) {
+		return requireOwnedForUpdate(userId, teamId, List.of());
+	}
+
+	@Transactional(propagation = Propagation.MANDATORY)
+	public Team requireOwnedForUpdate(
+			UUID userId, UUID teamId, Collection<UUID> relatedProfileIds
+	) {
+		UUID ownerProfileId = teamRepository.findOwnerProfileId(teamId)
+				.orElseThrow(() -> new TeamNotFoundException(teamId));
+		UUID actorProfileId = actorProfileIdForUser(userId);
+		if (!ownerProfileId.equals(actorProfileId)) {
+			throw new TeamOwnerRequiredException();
+		}
+		Set<UUID> profileIds = new HashSet<>(relatedProfileIds);
+		profileIds.add(actorProfileId);
+		lockService.lock(profileIds, userId);
+		Team team = teamRepository.findByIdForUpdate(teamId)
+				.orElseThrow(() -> new TeamNotFoundException(teamId));
+		accountAccessService.ensureAccessAllowed(userId);
+		ensureOwner(team, actorProfileId);
+		return team;
+	}
+
+	public void ensureOwner(Team team, UUID profileId) {
+		if (!team.isOwnedBy(profileId)) {
 			throw new TeamOwnerRequiredException();
 		}
 	}
 
-	@Transactional(propagation = Propagation.MANDATORY)
-	public Team findForUpdate(UUID teamId) {
-		return teamRepository.findByIdForUpdate(teamId)
-				.orElseThrow(() -> new TeamNotFoundException(teamId));
+	public void ensureActive(Team team) {
+		if (team.getStatus() != TeamStatus.ACTIVE) {
+			throw new TeamNotActiveException(team.getId());
+		}
 	}
 
-	@Transactional(propagation = Propagation.MANDATORY)
-	public void lockProfiles(Collection<UUID> profileIds, UUID actorUserId) {
-		Set<UUID> userIds = new HashSet<>();
-		profileIds.forEach(profileId ->
-				profileRepository.findOwnerUserId(profileId).ifPresent(userIds::add));
-		if (actorUserId != null) {
-			userIds.add(actorUserId);
-		}
-		if (!userIds.isEmpty()) {
-			boolean actorExists = userRepository.findAllByIdForUpdate(userIds).stream()
-					.anyMatch(user -> user.getId().equals(actorUserId));
-			if (actorUserId != null && !actorExists) {
-				throw new UserNotFoundException(actorUserId);
-			}
-		}
-		Set<UUID> lockedIds = profileRepository.findAllByIdForUpdate(profileIds).stream()
-				.map(Profile::getId).collect(Collectors.toSet());
-		for (UUID profileId : profileIds) {
-			if (!lockedIds.contains(profileId)) {
-				throw new ProfileNotFoundException(profileId);
-			}
-		}
+	private UUID actorProfileIdForUser(UUID userId) {
+		return profileService.findOptionalIdByUserId(userId)
+				.orElseThrow(TeamOwnerRequiredException::new);
 	}
 }

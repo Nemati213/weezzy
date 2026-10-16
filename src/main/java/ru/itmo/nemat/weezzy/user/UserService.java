@@ -3,8 +3,11 @@ package ru.itmo.nemat.weezzy.user;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -36,6 +39,11 @@ public class UserService {
 	public User findById(UUID id) {
 		return userRepository.findById(id)
 				.orElseThrow(() -> new UserNotFoundException(id));
+	}
+
+	@Transactional(propagation = Propagation.MANDATORY)
+	public List<User> findAllByIdsForUpdate(Collection<UUID> userIds) {
+		return userIds.isEmpty() ? List.of() : userRepository.findAllByIdForUpdate(userIds);
 	}
 
 	@Transactional(readOnly = true)

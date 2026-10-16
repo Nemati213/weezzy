@@ -14,12 +14,17 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.util.AopTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.IllegalTransactionStateException;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 import ru.itmo.nemat.weezzy.common.exception.ConflictException;
 import ru.itmo.nemat.weezzy.connection.block.ProfileBlockService;
+import ru.itmo.nemat.weezzy.moderation.sanction.AccountSanction;
+import ru.itmo.nemat.weezzy.moderation.sanction.AccountSanctionRepository;
+import ru.itmo.nemat.weezzy.moderation.sanction.AccountSanctionType;
 import ru.itmo.nemat.weezzy.notification.NotificationRepository;
 import ru.itmo.nemat.weezzy.notification.NotificationType;
 import ru.itmo.nemat.weezzy.outbox.OutboxEventRepository;
@@ -29,6 +34,7 @@ import ru.itmo.nemat.weezzy.outbox.payload.TeamInvitationResolvedPayload;
 import ru.itmo.nemat.weezzy.outbox.worker.OutboxEventClaimService;
 import ru.itmo.nemat.weezzy.outbox.worker.OutboxEventProcessor;
 import ru.itmo.nemat.weezzy.profile.ProfileRepository;
+import ru.itmo.nemat.weezzy.profile.ProfileNotFoundException;
 import ru.itmo.nemat.weezzy.profile.ProfileStatus;
 import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser;
 import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser.TestProfile;
@@ -39,6 +45,8 @@ import ru.itmo.nemat.weezzy.team.invitation.TeamInvitationStatus;
 import ru.itmo.nemat.weezzy.team.member.TeamMember;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberId;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberRepository;
+import ru.itmo.nemat.weezzy.user.AccountTemporarilySuspendedException;
+import ru.itmo.nemat.weezzy.user.UserRepository;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
@@ -86,6 +94,14 @@ class TeamManagementTests {
 	@Autowired
 	private TeamService service;
 	@Autowired
+	private TeamAccessService accessService;
+	@Autowired
+	private TransactionTemplate transactionTemplate;
+	@Autowired
+	private UserRepository userRepository;
+	@Autowired
+	private AccountSanctionRepository sanctionRepository;
+	@Autowired
 	private TeamRepository teamRepository;
 	@Autowired
 	private TeamMemberRepository memberRepository;
@@ -119,6 +135,144 @@ class TeamManagementTests {
 	void clearEvents() {
 		notificationRepository.deleteAll();
 		eventRepository.deleteAll();
+	}
+
+	@Test
+	void ownerAccessUsesTeamAndProfileIdentity() throws Exception {
+		Fixture fixture = fixture(true);
+		UUID ownerProfileId = UUID.fromString(fixture.owner().id());
+		assertThat(accessService.isOwner(ownerProfileId, fixture.teamId())).isTrue();
+		assertThat(accessService.isOwner(userId(fixture.owner()), fixture.teamId())).isFalse();
+		assertThat(accessService.isOwner(UUID.fromString(fixture.member().id()),
+				fixture.teamId())).isFalse();
+		assertThat(accessService.isOwner(ownerProfileId, UUID.randomUUID())).isFalse();
+		assertThat(accessService.requireOwnedByUser(userId(fixture.owner()), fixture.teamId())
+				.getId()).isEqualTo(fixture.teamId());
+	}
+
+	@Test
+	void ownerAccessRejectsForeignAndMissingTeamsWithoutInspectingUnrelatedProfiles()
+			throws Exception {
+		Fixture fixture = fixture(true);
+		AuthenticatedTestUser noProfile = AuthenticatedTestUser.register(mockMvc, objectMapper);
+		for (UUID actorId : List.of(userId(fixture.member()),
+				UUID.fromString(noProfile.userId()))) {
+			assertThatThrownBy(() -> accessService.requireOwnedByUser(actorId, fixture.teamId()))
+					.isInstanceOf(TeamOwnerRequiredException.class);
+			assertThatThrownBy(() -> transactionTemplate.execute(status ->
+					accessService.requireOwnedForUpdate(actorId, fixture.teamId(),
+							List.of(UUID.randomUUID()))))
+					.isInstanceOf(TeamOwnerRequiredException.class);
+		}
+		assertThatThrownBy(() -> accessService.requireOwnedByUser(
+				userId(fixture.owner()), UUID.randomUUID()))
+				.isInstanceOf(TeamNotFoundException.class);
+		assertThatThrownBy(() -> transactionTemplate.execute(status ->
+				accessService.requireOwnedForUpdate(userId(fixture.owner()), UUID.randomUUID())))
+				.isInstanceOf(TeamNotFoundException.class);
+	}
+
+	@Test
+	void ownerAccessKeepsOwnershipSeparateFromTeamAndProfileActivity() throws Exception {
+		Fixture fixture = fixture(true);
+		setStatus(fixture.owner(), ProfileStatus.HIDDEN);
+		service.archiveForUser(userId(fixture.owner()), fixture.teamId());
+		Team archived = accessService.requireOwnedByUser(userId(fixture.owner()),
+				fixture.teamId());
+		assertThat(archived.getStatus()).isEqualTo(TeamStatus.ARCHIVED);
+		assertThatThrownBy(() -> accessService.ensureActive(archived))
+				.isInstanceOf(TeamNotActiveException.class);
+		Team locked = transactionTemplate.execute(status -> accessService.requireOwnedForUpdate(
+				userId(fixture.owner()), fixture.teamId()));
+		assertThat(locked).isNotNull();
+		assertThat(locked.getStatus()).isEqualTo(TeamStatus.ARCHIVED);
+	}
+
+	@Test
+	void ownedWriteAccessRequiresTransactionAndExistingRelatedProfiles() throws Exception {
+		Fixture fixture = fixture(true);
+		assertThatThrownBy(() -> accessService.requireOwnedForUpdate(
+				userId(fixture.owner()), fixture.teamId()))
+				.isInstanceOf(IllegalTransactionStateException.class);
+		assertThatThrownBy(() -> transactionTemplate.execute(status ->
+				accessService.requireOwnedForUpdate(userId(fixture.owner()), fixture.teamId(),
+						List.of(UUID.randomUUID()))))
+				.isInstanceOf(ProfileNotFoundException.class);
+	}
+
+	@Test
+	void ownedWriteAccessRechecksOwnerAfterWaitingForTeam() throws Exception {
+		Fixture fixture = fixture(true);
+		try (var executor = Executors.newSingleThreadExecutor()) {
+			Future<RuntimeException> future = transactionTemplate.execute(transaction -> {
+				teamRepository.findByIdForUpdate(fixture.teamId()).orElseThrow();
+				Future<RuntimeException> pending = executor.submit(() ->
+						captureOwnedAccess(fixture));
+				awaitLock("from teams");
+				jdbcTemplate.update("UPDATE teams SET owner_profile_id = ? WHERE id = ?",
+						UUID.fromString(fixture.member().id()), fixture.teamId());
+				return pending;
+			});
+			assertThat(future.get(20, TimeUnit.SECONDS))
+					.isInstanceOf(TeamOwnerRequiredException.class);
+		}
+	}
+
+	@Test
+	void ownedWriteAccessRechecksSanctionsAfterWaitingForAccount() throws Exception {
+		Fixture fixture = fixture(true);
+		try (var executor = Executors.newSingleThreadExecutor()) {
+			Future<RuntimeException> future = transactionTemplate.execute(transaction -> {
+				userRepository.findByIdForUpdate(userId(fixture.owner())).orElseThrow();
+				Future<RuntimeException> pending = executor.submit(() ->
+						captureOwnedAccess(fixture));
+				awaitLock("from users");
+				AccountSanction sanction = new AccountSanction();
+				sanction.setTargetUserId(userId(fixture.owner()));
+				sanction.setTargetProfileId(UUID.fromString(fixture.owner().id()));
+				sanction.setType(AccountSanctionType.TEMPORARY_SUSPENSION);
+				sanction.setReason("Test sanction");
+				sanction.setExpiresAt(LocalDateTime.now().plusHours(1));
+				sanction.setCreatedByUserId(UUID.randomUUID());
+				sanctionRepository.saveAndFlush(sanction);
+				return pending;
+			});
+			assertThat(future.get(20, TimeUnit.SECONDS))
+					.isInstanceOf(AccountTemporarilySuspendedException.class);
+		}
+	}
+
+	private RuntimeException captureOwnedAccess(Fixture fixture) {
+		try {
+			transactionTemplate.execute(transaction -> accessService.requireOwnedForUpdate(
+					userId(fixture.owner()), fixture.teamId()));
+			return null;
+		} catch (RuntimeException exception) {
+			return exception;
+		}
+	}
+
+	private void awaitLock(String table) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (System.nanoTime() < deadline) {
+			jdbcTemplate.execute("SELECT pg_stat_clear_snapshot()");
+			Boolean waiting = jdbcTemplate.queryForObject("""
+					SELECT EXISTS (
+					    SELECT 1 FROM pg_stat_activity
+					    WHERE wait_event_type = 'Lock' AND LOWER(query) LIKE ?
+					)
+					""", Boolean.class, "%" + table + "%");
+			if (Boolean.TRUE.equals(waiting)) {
+				return;
+			}
+			try {
+				Thread.sleep(20);
+			} catch (InterruptedException exception) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException(exception);
+			}
+		}
+		throw new AssertionError("Owner access did not wait for " + table + " lock");
 	}
 
 	@Test

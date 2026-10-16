@@ -7,6 +7,7 @@ import ru.itmo.nemat.weezzy.connection.block.ProfileBlockRepository;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 import ru.itmo.nemat.weezzy.profile.ProfileStatus;
+import ru.itmo.nemat.weezzy.profile.lock.AccountProfileLockService;
 import ru.itmo.nemat.weezzy.profile.photo.ProfilePhotoService;
 import ru.itmo.nemat.weezzy.profile.photo.dto.ProfilePhotoResponse;
 import ru.itmo.nemat.weezzy.team.dto.CreateTeamRequest;
@@ -35,11 +36,14 @@ public class TeamService {
 	private final ProfileBlockRepository blockRepository;
 	private final ProfilePhotoService photoService;
 	private final TeamAccessService accessService;
+	private final AccountProfileLockService lockService;
 	private final TeamInvitationService invitationService;
 
 	@Transactional
 	public TeamResponse createForUser(UUID userId, CreateTeamRequest request) {
-		Profile owner = profileService.findByUserIdForUpdate(userId);
+		UUID ownerId = profileService.findIdByUserId(userId);
+		lockService.lock(List.of(ownerId), userId);
+		Profile owner = profileService.findById(ownerId);
 		accountAccessService.ensureAccessAllowed(userId);
 		if (owner.getStatus() != ProfileStatus.ACTIVE) {
 			throw new TeamProfileNotActiveException(owner.getId());
@@ -61,9 +65,7 @@ public class TeamService {
 
 	@Transactional(readOnly = true)
 	public TeamResponse findByIdForUser(UUID userId, UUID teamId) {
-		accountAccessService.ensureAccessAllowed(userId);
-		Team team = teamRepository.findByIdAndStatus(teamId, TeamStatus.ACTIVE)
-				.orElseThrow(() -> new TeamNotFoundException(teamId));
+		Team team = accessService.requireVisibleForUser(userId, teamId);
 		UUID viewerProfileId = profileService.findOptionalByUserId(userId)
 				.map(Profile::getId)
 				.orElse(null);
@@ -81,11 +83,12 @@ public class TeamService {
 	@Transactional
 	public void leaveForUser(UUID userId, UUID teamId) {
 		UUID ownerId = ownerProfileId(teamId);
-		UUID profileId = accessService.currentProfileId(userId);
-		accessService.lockProfiles(List.of(ownerId, profileId), userId);
-		Team team = accessService.findForUpdate(teamId);
+		UUID profileId = profileService.findIdByUserId(userId);
+		lockService.lock(List.of(ownerId, profileId), userId);
+		Team team = teamRepository.findByIdForUpdate(teamId)
+				.orElseThrow(() -> new TeamNotFoundException(teamId));
 		accountAccessService.ensureAccessAllowed(userId);
-		ensureActiveTeam(team);
+		accessService.ensureActive(team);
 		ensureNotOwner(team, profileId);
 		if (removeMembership(teamId, profileId)) {
 			invitationService.cancelPending(teamId, profileId);
@@ -94,13 +97,8 @@ public class TeamService {
 
 	@Transactional
 	public void removeMemberForUser(UUID userId, UUID teamId, UUID profileId) {
-		UUID ownerId = ownerProfileId(teamId);
-		accessService.ensureOwner(userId, ownerId);
-		accessService.lockProfiles(List.of(ownerId, profileId), userId);
-		Team team = accessService.findForUpdate(teamId);
-		accountAccessService.ensureAccessAllowed(userId);
-		accessService.ensureOwner(userId, team.getOwnerProfile().getId());
-		ensureActiveTeam(team);
+		Team team = accessService.requireOwnedForUpdate(userId, teamId, List.of(profileId));
+		accessService.ensureActive(team);
 		ensureNotOwner(team, profileId);
 		removeMembership(teamId, profileId);
 		invitationService.cancelPending(teamId, profileId);
@@ -108,12 +106,7 @@ public class TeamService {
 
 	@Transactional
 	public void archiveForUser(UUID userId, UUID teamId) {
-		UUID ownerId = ownerProfileId(teamId);
-		accessService.ensureOwner(userId, ownerId);
-		accessService.lockProfiles(List.of(ownerId), userId);
-		Team team = accessService.findForUpdate(teamId);
-		accountAccessService.ensureAccessAllowed(userId);
-		accessService.ensureOwner(userId, team.getOwnerProfile().getId());
+		Team team = accessService.requireOwnedForUpdate(userId, teamId);
 		if (team.getStatus() == TeamStatus.ARCHIVED) {
 			return;
 		}
@@ -126,14 +119,8 @@ public class TeamService {
 				.orElseThrow(() -> new TeamNotFoundException(teamId));
 	}
 
-	private void ensureActiveTeam(Team team) {
-		if (team.getStatus() != TeamStatus.ACTIVE) {
-			throw new TeamNotActiveException(team.getId());
-		}
-	}
-
 	private void ensureNotOwner(Team team, UUID profileId) {
-		if (team.getOwnerProfile().getId().equals(profileId)) {
+		if (team.isOwnedBy(profileId)) {
 			throw new TeamOwnerCannotLeaveException();
 		}
 	}

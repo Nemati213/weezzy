@@ -17,7 +17,9 @@ import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -49,6 +51,22 @@ public class ProfileService {
 	@Transactional(readOnly = true)
 	public List<Profile> findAllByIds(Collection<UUID> profileIds) {
 		return profileRepository.findAllById(profileIds);
+	}
+
+	@Transactional(propagation = Propagation.MANDATORY)
+	public List<Profile> findAllByIdsForUpdate(Collection<UUID> profileIds) {
+		if (profileIds.isEmpty()) {
+			return List.of();
+		}
+		List<Profile> profiles = profileRepository.findAllByIdForUpdate(profileIds);
+		Set<UUID> foundIds = profiles.stream().map(Profile::getId)
+				.collect(Collectors.toSet());
+		for (UUID profileId : profileIds) {
+			if (!foundIds.contains(profileId)) {
+				throw new ProfileNotFoundException(profileId);
+			}
+		}
+		return profiles;
 	}
 
 	private Profile buildProfile(CreateProfileRequest request) {
@@ -86,6 +104,17 @@ public class ProfileService {
 
 	public Profile findByUserId(UUID userId) {
 		return profileRepository.findByUserId(userId).orElseThrow(() -> new ProfileNotFoundException(userId));
+	}
+
+	@Transactional(readOnly = true)
+	public UUID findIdByUserId(UUID userId) {
+		return findOptionalIdByUserId(userId)
+				.orElseThrow(() -> new ProfileNotFoundException(userId));
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<UUID> findOptionalIdByUserId(UUID userId) {
+		return profileRepository.findIdByUserId(userId);
 	}
 
 	@Transactional(readOnly = true)

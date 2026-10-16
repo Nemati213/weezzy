@@ -11,15 +11,13 @@ import ru.itmo.nemat.weezzy.outbox.OutboxEventService;
 import ru.itmo.nemat.weezzy.outbox.payload.TeamInvitationResolvedPayload;
 import ru.itmo.nemat.weezzy.outbox.payload.TeamInvitationSentPayload;
 import ru.itmo.nemat.weezzy.profile.Profile;
-import ru.itmo.nemat.weezzy.profile.ProfileRepository;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 import ru.itmo.nemat.weezzy.profile.ProfileStatus;
+import ru.itmo.nemat.weezzy.profile.lock.AccountProfileLockService;
 import ru.itmo.nemat.weezzy.team.Team;
-import ru.itmo.nemat.weezzy.team.TeamNotActiveException;
 import ru.itmo.nemat.weezzy.team.TeamNotFoundException;
 import ru.itmo.nemat.weezzy.team.TeamAccessService;
 import ru.itmo.nemat.weezzy.team.TeamRepository;
-import ru.itmo.nemat.weezzy.team.TeamStatus;
 import ru.itmo.nemat.weezzy.team.invitation.dto.TeamInvitationResponse;
 import ru.itmo.nemat.weezzy.team.member.TeamMember;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberAlreadyExistsException;
@@ -37,26 +35,24 @@ public class TeamInvitationService {
 	private final TeamInvitationRepository repository;
 	private final TeamRepository teamRepository;
 	private final TeamMemberRepository memberRepository;
-	private final ProfileRepository profileRepository;
 	private final ProfileService profileService;
 	private final AccountAccessService accountAccessService;
 	private final TeamAccessService accessService;
+	private final AccountProfileLockService lockService;
 	private final ProfileBlockService blockService;
 	private final OutboxEventService outboxEventService;
 
 	@Transactional
 	public TeamInvitationResponse send(UUID userId, UUID teamId, UUID inviteeProfileId) {
-		UUID ownerId = teamRepository.findOwnerProfileId(teamId)
-				.orElseThrow(() -> new TeamNotFoundException(teamId));
-		accessService.ensureOwner(userId, ownerId);
+		Team team = accessService.requireOwnedForUpdate(
+				userId, teamId, List.of(inviteeProfileId)
+		);
+		UUID ownerId = team.getOwnerProfile().getId();
 		if (ownerId.equals(inviteeProfileId)) {
 			throw new SelfTeamInvitationException();
 		}
-		accessService.lockProfiles(List.of(ownerId, inviteeProfileId), userId);
-		Team team = accessService.findForUpdate(teamId);
 		Profile inviter = profileService.findById(ownerId);
 		Profile invitee = profileService.findById(inviteeProfileId);
-		accountAccessService.ensureAccessAllowed(userId);
 		ensureEligible(team, inviter, invitee);
 		ensureNotMember(teamId, inviteeProfileId);
 		if (repository.existsByTeamIdAndInviteeProfileIdAndStatus(
@@ -78,10 +74,10 @@ public class TeamInvitationService {
 		accountAccessService.ensureAccessAllowed(userId);
 		TeamInvitation invitation = repository.findById(id)
 				.orElseThrow(() -> new TeamInvitationNotFoundException(id));
-		boolean isInviter = profileRepository.findOwnerUserId(
+		boolean isInviter = profileService.findOptionalOwnerUserId(
 				invitation.getInviterProfile().getId()
 		).filter(userId::equals).isPresent();
-		boolean isInvitee = profileRepository.findOwnerUserId(
+		boolean isInvitee = profileService.findOptionalOwnerUserId(
 				invitation.getInviteeProfile().getId()
 		).filter(userId::equals).isPresent();
 		if (!isInviter && !isInvitee) {
@@ -121,7 +117,7 @@ public class TeamInvitationService {
 		if (participants == null) {
 			return null;
 		}
-		accessService.lockProfiles(List.of(
+		lockService.lock(List.of(
 				participants.inviterProfileId(), participants.inviteeProfileId()
 		), null);
 		if (teamRepository.findByIdForUpdate(participants.teamId()).isEmpty()) {
@@ -139,14 +135,15 @@ public class TeamInvitationService {
 				.orElseThrow(() -> new TeamInvitationNotFoundException(id));
 		UUID actorProfileId = status == TeamInvitationStatus.CANCELLED
 				? participants.inviterProfileId() : participants.inviteeProfileId();
-		if (!profileRepository.findOwnerUserId(actorProfileId).filter(userId::equals)
+		if (!profileService.findOptionalOwnerUserId(actorProfileId).filter(userId::equals)
 				.isPresent()) {
 			throw new TeamInvitationNotFoundException(id);
 		}
-		accessService.lockProfiles(List.of(
+		lockService.lock(List.of(
 				participants.inviterProfileId(), participants.inviteeProfileId()
 		), userId);
-		Team team = accessService.findForUpdate(participants.teamId());
+		Team team = teamRepository.findByIdForUpdate(participants.teamId())
+				.orElseThrow(() -> new TeamNotFoundException(participants.teamId()));
 		TeamInvitation invitation = repository.findByIdForUpdate(id)
 				.orElseThrow(() -> new TeamInvitationNotFoundException(id));
 		accountAccessService.ensureAccessAllowed(userId);
@@ -174,7 +171,8 @@ public class TeamInvitationService {
 
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void cancelPending(UUID teamId, UUID profileId) {
-		accessService.findForUpdate(teamId);
+		teamRepository.findByIdForUpdate(teamId)
+				.orElseThrow(() -> new TeamNotFoundException(teamId));
 		LocalDateTime now = LocalDateTime.now();
 		for (TeamInvitation invitation : repository.findPendingForUpdate(teamId, profileId)) {
 			invitation.setStatus(TeamInvitationStatus.CANCELLED);
@@ -187,10 +185,8 @@ public class TeamInvitationService {
 	}
 
 	private void ensureEligible(Team team, Profile inviter, Profile invitee) {
-		if (team.getStatus() != TeamStatus.ACTIVE) {
-			throw new TeamNotActiveException(team.getId());
-		}
-		if (!team.getOwnerProfile().getId().equals(inviter.getId())
+		accessService.ensureActive(team);
+		if (!team.isOwnedBy(inviter.getId())
 				|| !memberRepository.existsById(new TeamMemberId(team.getId(), inviter.getId()))) {
 			throw new TeamNotFoundException(team.getId());
 		}
