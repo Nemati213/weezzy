@@ -20,6 +20,8 @@ import ru.itmo.nemat.weezzy.team.invitation.TeamInvitation;
 import ru.itmo.nemat.weezzy.team.invitation.TeamInvitationRepository;
 import ru.itmo.nemat.weezzy.team.invitation.TeamInvitationStatus;
 import ru.itmo.nemat.weezzy.team.member.TeamMember;
+import ru.itmo.nemat.weezzy.team.position.TeamPositionRepository;
+import static ru.itmo.nemat.weezzy.support.TeamPositionTestData.positionId;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberId;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberRepository;
 
@@ -47,6 +49,8 @@ class TeamRepositoryTests {
 
 	@Autowired
 	private TeamRepository teamRepository;
+	@Autowired
+	private TeamPositionRepository teamPositionRepository;
 
 	@Autowired
 	private TeamMemberRepository memberRepository;
@@ -108,9 +112,10 @@ class TeamRepositoryTests {
 		addMember(team, team.getOwnerProfile());
 
 		assertThatThrownBy(() -> jdbcTemplate.update("""
-				INSERT INTO team_members (team_id, profile_id)
-				VALUES (?, ?)
-				""", team.getId(), team.getOwnerProfile().getId()))
+				INSERT INTO team_members (team_id, profile_id, position_id)
+				VALUES (?, ?, ?)
+				""", team.getId(), team.getOwnerProfile().getId(),
+				positionId(jdbcTemplate, team.getId())))
 				.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
@@ -220,6 +225,7 @@ class TeamRepositoryTests {
 		Team team = new Team();
 		team.setOwnerProfile(createProfile("Owner"));
 		team.setName("Hackathon team");
+		team.setPurpose("Build project");
 		team.setDescription("A service for students");
 		return teamRepository.saveAndFlush(team);
 	}
@@ -235,6 +241,7 @@ class TeamRepositoryTests {
 		member.setId(new TeamMemberId(team.getId(), profile.getId()));
 		member.setTeam(team);
 		member.setProfile(profile);
+		member.setPosition(teamPositionRepository.getReferenceById(positionId(jdbcTemplate, team.getId())));
 		return memberRepository.saveAndFlush(member);
 	}
 
@@ -245,6 +252,7 @@ class TeamRepositoryTests {
 	private TeamInvitation invitation(Team team, Profile invitee) {
 		TeamInvitation invitation = new TeamInvitation();
 		invitation.setTeam(team);
+		invitation.setPosition(teamPositionRepository.getReferenceById(positionId(jdbcTemplate, team.getId())));
 		invitation.setInviterProfile(team.getOwnerProfile());
 		invitation.setInviteeProfile(invitee);
 		return invitation;

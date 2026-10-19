@@ -15,7 +15,6 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
@@ -54,10 +53,6 @@ public class TeamRequest {
 	@NotNull
 	@Column(name = "recruitment_deadline", nullable = false)
 	private LocalDateTime recruitmentDeadline;
-
-	@Positive
-	@Column(name = "target_team_size", nullable = false)
-	private int targetTeamSize;
 
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private LocalDateTime createdAt;

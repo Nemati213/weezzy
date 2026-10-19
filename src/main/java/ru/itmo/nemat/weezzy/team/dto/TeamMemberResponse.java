@@ -10,6 +10,8 @@ import java.util.UUID;
 public record TeamMemberResponse(
 		UUID profileId,
 		String displayName,
+		UUID positionId,
+		String positionName,
 		LocalDateTime joinedAt,
 		List<ProfilePhotoResponse> photos
 ) {
@@ -20,6 +22,8 @@ public record TeamMemberResponse(
 		return new TeamMemberResponse(
 				member.getProfile().getId(),
 				member.getProfile().getDisplayName(),
+				member.getPosition().getId(),
+				member.getPosition().getName(),
 				member.getJoinedAt(),
 				List.copyOf(photos)
 		);

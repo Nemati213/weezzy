@@ -1,9 +1,12 @@
 package ru.itmo.nemat.weezzy.team.request.position;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface TeamRequestPositionRepository
@@ -15,4 +18,7 @@ public interface TeamRequestPositionRepository
 	);
 
 	long countByRequestId(UUID requestId);
+
+	@Query("SELECT position.request.id FROM TeamRequestPosition position WHERE position.id = :id")
+	Optional<UUID> findRequestId(@Param("id") UUID id);
 }

@@ -9,6 +9,7 @@ import java.util.UUID;
 public record TeamInvitationResponse(
 		UUID id,
 		UUID teamId,
+		UUID positionId,
 		TeamInvitationStatus status,
 		LocalDateTime createdAt,
 		LocalDateTime resolvedAt
@@ -16,6 +17,7 @@ public record TeamInvitationResponse(
 	public static TeamInvitationResponse from(TeamInvitation invitation) {
 		return new TeamInvitationResponse(
 				invitation.getId(), invitation.getTeam().getId(),
+				invitation.getPosition().getId(),
 				invitation.getStatus(),
 				invitation.getCreatedAt(), invitation.getResolvedAt()
 		);

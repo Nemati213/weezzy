@@ -23,10 +23,12 @@ import ru.itmo.nemat.weezzy.skill.SkillRepository;
 import ru.itmo.nemat.weezzy.team.Team;
 import ru.itmo.nemat.weezzy.team.TeamRepository;
 import ru.itmo.nemat.weezzy.team.request.position.TeamRequestPosition;
+import ru.itmo.nemat.weezzy.team.position.TeamPosition;
+import ru.itmo.nemat.weezzy.team.position.TeamPositionRepository;
 import ru.itmo.nemat.weezzy.team.request.position.TeamRequestPositionRepository;
-import ru.itmo.nemat.weezzy.team.request.position.skill.TeamRequestPositionSkill;
-import ru.itmo.nemat.weezzy.team.request.position.skill.TeamRequestPositionSkillId;
-import ru.itmo.nemat.weezzy.team.request.position.skill.TeamRequestPositionSkillRepository;
+import ru.itmo.nemat.weezzy.team.position.skill.TeamPositionSkill;
+import ru.itmo.nemat.weezzy.team.position.skill.TeamPositionSkillId;
+import ru.itmo.nemat.weezzy.team.position.skill.TeamPositionSkillRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -55,10 +57,12 @@ class TeamRequestRepositoryTests {
 	private TeamRequestRepository requestRepository;
 
 	@Autowired
-	private TeamRequestPositionRepository positionRepository;
+	private TeamPositionRepository positionRepository;
+	@Autowired
+	private TeamRequestPositionRepository linkRepository;
 
 	@Autowired
-	private TeamRequestPositionSkillRepository positionSkillRepository;
+	private TeamPositionSkillRepository positionSkillRepository;
 
 	@Autowired
 	private TeamRepository teamRepository;
@@ -86,8 +90,8 @@ class TeamRequestRepositoryTests {
 	void requestPositionsAndCatalogSkillsCanBeSavedSeparately() {
 		Team team = createTeam();
 		TeamRequest request = createRequest(team);
-		TeamRequestPosition backend = createPosition(request, "Backend");
-		TeamRequestPosition designer = createPosition(request, "Designer");
+		TeamPosition backend = createPosition(request, "Backend");
+		TeamPosition designer = createPosition(request, "Designer");
 		Skill java = createSkill("Java");
 		Skill figma = createSkill("Figma");
 		addSkill(backend, java);
@@ -98,21 +102,20 @@ class TeamRequestRepositoryTests {
 		assertThat(found.getTitle()).isEqualTo("Hackathon recruitment");
 		assertThat(found.getDescription()).isEqualTo("A service for students");
 		assertThat(found.getStatus()).isEqualTo(TeamRequestStatus.OPEN);
-		assertThat(found.getTargetTeamSize()).isEqualTo(4);
 		assertThat(found.getRecruitmentDeadline())
 				.isEqualTo(request.getRecruitmentDeadline());
 		assertThat(found.getCreatedAt()).isNotNull();
 		assertThat(found.getUpdatedAt()).isNotNull();
-		assertThat(positionRepository.countByRequestId(request.getId())).isEqualTo(2);
-		assertThat(positionRepository.findByRequestIdOrderByCreatedAtAscIdAsc(request.getId()))
-				.extracting(TeamRequestPosition::getId)
-				.containsExactly(backend.getId(), designer.getId());
-		TeamRequestPosition foundPosition = positionRepository.findById(backend.getId())
+		assertThat(linkRepository.countByRequestId(request.getId())).isEqualTo(2);
+		assertThat(linkRepository.findByRequestIdOrderByCreatedAtAscIdAsc(request.getId()))
+				.extracting(link -> link.getPosition().getId())
+				.containsExactlyInAnyOrder(backend.getId(), designer.getId());
+		TeamPosition foundPosition = positionRepository.findById(backend.getId())
 				.orElseThrow();
-		assertThat(foundPosition.getRequest().getId()).isEqualTo(request.getId());
+		assertThat(foundPosition.getTeam().getId()).isEqualTo(team.getId());
 		assertThat(foundPosition.getName()).isEqualTo("Backend");
 		assertThat(foundPosition.getDescription()).isEqualTo("Build the product");
-		assertThat(foundPosition.getSlotsCount()).isEqualTo(1);
+		assertThat(foundPosition.getCapacity()).isEqualTo(1);
 		assertThat(foundPosition.getCreatedAt()).isNotNull();
 		assertThat(foundPosition.getUpdatedAt()).isNotNull();
 		assertThat(positionSkillRepository.findByPositionIdOrderBySkillIdAsc(backend.getId()))
@@ -179,14 +182,14 @@ class TeamRequestRepositoryTests {
 
 	@Test
 	void changingPositionUpdatesTimestampAndPreservesCreationTime() {
-		TeamRequestPosition created = createPosition(createRequest(createTeam()), "Backend");
-		TeamRequestPosition position = positionRepository.findById(created.getId())
+		TeamPosition created = createPosition(createRequest(createTeam()), "Backend");
+		TeamPosition position = positionRepository.findById(created.getId())
 				.orElseThrow();
-		position.setSlotsCount(2);
+		position.setCapacity(2);
 		positionRepository.saveAndFlush(position);
 
-		TeamRequestPosition found = positionRepository.findById(position.getId()).orElseThrow();
-		assertThat(found.getSlotsCount()).isEqualTo(2);
+		TeamPosition found = positionRepository.findById(position.getId()).orElseThrow();
+		assertThat(found.getCapacity()).isEqualTo(2);
 		assertThat(found.getCreatedAt()).isEqualTo(position.getCreatedAt());
 		assertThat(found.getUpdatedAt()).isAfter(position.getUpdatedAt());
 	}
@@ -195,28 +198,24 @@ class TeamRequestRepositoryTests {
 	@ValueSource(strings = {"", "   "})
 	void blankRequestTitleAndPositionNameAreRejectedByDatabase(String text) {
 		TeamRequest request = createRequest(createTeam());
-		TeamRequestPosition position = createPosition(request, "Backend");
+		TeamPosition position = createPosition(request, "Backend");
 
 		assertThatThrownBy(() -> jdbcTemplate.update(
 				"UPDATE team_requests SET title = ? WHERE id = ?", text, request.getId()
 		)).isInstanceOf(DataIntegrityViolationException.class);
 		assertThatThrownBy(() -> jdbcTemplate.update(
-				"UPDATE team_request_positions SET name = ? WHERE id = ?", text, position.getId()
+				"UPDATE team_positions SET name = ? WHERE id = ?", text, position.getId()
 		)).isInstanceOf(DataIntegrityViolationException.class);
 	}
 
 	@ParameterizedTest
 	@ValueSource(ints = {0, -1})
-	void nonPositiveTeamSizeAndSlotCountAreRejectedByDatabase(int count) {
+	void nonPositivePositionCapacityIsRejectedByDatabase(int count) {
 		TeamRequest request = createRequest(createTeam());
-		TeamRequestPosition position = createPosition(request, "Backend");
+		TeamPosition position = createPosition(request, "Backend");
 
 		assertThatThrownBy(() -> jdbcTemplate.update(
-				"UPDATE team_requests SET target_team_size = ? WHERE id = ?",
-				count, request.getId()
-		)).isInstanceOf(DataIntegrityViolationException.class);
-		assertThatThrownBy(() -> jdbcTemplate.update(
-				"UPDATE team_request_positions SET slots_count = ? WHERE id = ?",
+				"UPDATE team_positions SET capacity = ? WHERE id = ?",
 				count, position.getId()
 		)).isInstanceOf(DataIntegrityViolationException.class);
 	}
@@ -237,7 +236,7 @@ class TeamRequestRepositoryTests {
 	@Test
 	void missingParentsAreRejectedByDatabase() {
 		TeamRequest request = createRequest(createTeam());
-		TeamRequestPosition position = createPosition(request, "Backend");
+		TeamPosition position = createPosition(request, "Backend");
 		Skill skill = createSkill("Java");
 		addSkill(position, skill);
 
@@ -246,16 +245,16 @@ class TeamRequestRepositoryTests {
 				UUID.randomUUID(), request.getId()
 		)).isInstanceOf(DataIntegrityViolationException.class);
 		assertThatThrownBy(() -> jdbcTemplate.update(
-				"UPDATE team_request_positions SET request_id = ? WHERE id = ?",
+				"UPDATE team_positions SET team_id = ? WHERE id = ?",
 				UUID.randomUUID(), position.getId()
 		)).isInstanceOf(DataIntegrityViolationException.class);
 		assertThatThrownBy(() -> jdbcTemplate.update("""
-				INSERT INTO team_request_position_skills (position_id, skill_id)
+				INSERT INTO team_position_skills (position_id, skill_id)
 				VALUES (?, ?)
 				""", UUID.randomUUID(), skill.getId()))
 				.isInstanceOf(DataIntegrityViolationException.class);
 		assertThatThrownBy(() -> jdbcTemplate.update("""
-				INSERT INTO team_request_position_skills (position_id, skill_id)
+				INSERT INTO team_position_skills (position_id, skill_id)
 				VALUES (?, ?)
 				""", position.getId(), UUID.randomUUID()))
 				.isInstanceOf(DataIntegrityViolationException.class);
@@ -264,14 +263,14 @@ class TeamRequestRepositoryTests {
 	@Test
 	void sameSkillCannotBeLinkedTwiceToPositionButCanBeUsedInAnotherPosition() {
 		TeamRequest request = createRequest(createTeam());
-		TeamRequestPosition first = createPosition(request, "Backend");
-		TeamRequestPosition second = createPosition(request, "Fullstack");
+		TeamPosition first = createPosition(request, "Backend");
+		TeamPosition second = createPosition(request, "Fullstack");
 		Skill skill = createSkill("Java");
 		addSkill(first, skill);
 		addSkill(second, skill);
 
 		assertThatThrownBy(() -> jdbcTemplate.update("""
-				INSERT INTO team_request_position_skills (position_id, skill_id)
+				INSERT INTO team_position_skills (position_id, skill_id)
 				VALUES (?, ?)
 				""", first.getId(), skill.getId()))
 				.isInstanceOf(DataIntegrityViolationException.class);
@@ -280,33 +279,34 @@ class TeamRequestRepositoryTests {
 	}
 
 	@Test
-	void deletingRequestCascadesToPositionsAndLinksButPreservesTeamAndSkills() {
+	void deletingRequestPreservesTeamPositionsAndSkills() {
 		TeamRequest request = createRequest(createTeam());
-		TeamRequestPosition position = createPosition(request, "Backend");
+		TeamPosition position = createPosition(request, "Backend");
 		Skill skill = createSkill("Java");
-		TeamRequestPositionSkill link = addSkill(position, skill);
+		TeamPositionSkill link = addSkill(position, skill);
 
 		requestRepository.deleteById(request.getId());
 
 		assertThat(requestRepository.existsById(request.getId())).isFalse();
-		assertThat(positionRepository.existsById(position.getId())).isFalse();
-		assertThat(positionSkillRepository.existsById(link.getId())).isFalse();
+		assertThat(positionRepository.existsById(position.getId())).isTrue();
+		assertThat(positionSkillRepository.existsById(link.getId())).isTrue();
 		assertThat(teamRepository.existsById(request.getTeam().getId())).isTrue();
 		assertThat(skillRepository.existsById(skill.getId())).isTrue();
 	}
 
 	@Test
-	void deletingPositionOnlyRemovesItsSkillLinks() {
+	void publishedPositionCannotBeDeleted() {
 		TeamRequest request = createRequest(createTeam());
-		TeamRequestPosition first = createPosition(request, "Backend");
-		TeamRequestPosition second = createPosition(request, "Fullstack");
+		TeamPosition first = createPosition(request, "Backend");
+		TeamPosition second = createPosition(request, "Fullstack");
 		Skill skill = createSkill("Java");
-		TeamRequestPositionSkill removed = addSkill(first, skill);
-		TeamRequestPositionSkill retained = addSkill(second, skill);
+		TeamPositionSkill removed = addSkill(first, skill);
+		TeamPositionSkill retained = addSkill(second, skill);
 
-		positionRepository.deleteById(first.getId());
+		assertThatThrownBy(() -> positionRepository.deleteById(first.getId()))
+				.isInstanceOf(DataIntegrityViolationException.class);
 
-		assertThat(positionSkillRepository.existsById(removed.getId())).isFalse();
+		assertThat(positionSkillRepository.existsById(removed.getId())).isTrue();
 		assertThat(positionSkillRepository.existsById(retained.getId())).isTrue();
 		assertThat(requestRepository.existsById(request.getId())).isTrue();
 		assertThat(skillRepository.existsById(skill.getId())).isTrue();
@@ -314,7 +314,7 @@ class TeamRequestRepositoryTests {
 
 	@Test
 	void skillReferencedByPositionCannotBeDeleted() {
-		TeamRequestPosition position = createPosition(createRequest(createTeam()), "Backend");
+		TeamPosition position = createPosition(createRequest(createTeam()), "Backend");
 		Skill skill = createSkill("Java");
 		addSkill(position, skill);
 
@@ -329,6 +329,7 @@ class TeamRequestRepositoryTests {
 		Team team = new Team();
 		team.setOwnerProfile(profileRepository.saveAndFlush(owner));
 		team.setName("Hackathon team");
+		team.setPurpose("Build project");
 		return teamRepository.saveAndFlush(team);
 	}
 
@@ -338,17 +339,21 @@ class TeamRequestRepositoryTests {
 		request.setTitle("Hackathon recruitment");
 		request.setDescription("A service for students");
 		request.setRecruitmentDeadline(LocalDateTime.now().plusDays(7).withNano(0));
-		request.setTargetTeamSize(4);
 		return requestRepository.saveAndFlush(request);
 	}
 
-	private TeamRequestPosition createPosition(TeamRequest request, String name) {
-		TeamRequestPosition position = new TeamRequestPosition();
-		position.setRequest(request);
+	private TeamPosition createPosition(TeamRequest request, String name) {
+		TeamPosition position = new TeamPosition();
+		position.setTeam(request.getTeam());
 		position.setName(name);
 		position.setDescription("Build the product");
-		position.setSlotsCount(1);
-		return positionRepository.saveAndFlush(position);
+		position.setCapacity(1);
+		position = positionRepository.saveAndFlush(position);
+		TeamRequestPosition link = new TeamRequestPosition();
+		link.setRequest(request);
+		link.setPosition(position);
+		linkRepository.saveAndFlush(link);
+		return position;
 	}
 
 	private Skill createSkill(String name) {
@@ -357,9 +362,9 @@ class TeamRequestRepositoryTests {
 		return skillRepository.saveAndFlush(skill);
 	}
 
-	private TeamRequestPositionSkill addSkill(TeamRequestPosition position, Skill skill) {
-		TeamRequestPositionSkill link = new TeamRequestPositionSkill();
-		link.setId(new TeamRequestPositionSkillId(position.getId(), skill.getId()));
+	private TeamPositionSkill addSkill(TeamPosition position, Skill skill) {
+		TeamPositionSkill link = new TeamPositionSkill();
+		link.setId(new TeamPositionSkillId(position.getId(), skill.getId()));
 		link.setPosition(position);
 		link.setSkill(skill);
 		return positionSkillRepository.saveAndFlush(link);

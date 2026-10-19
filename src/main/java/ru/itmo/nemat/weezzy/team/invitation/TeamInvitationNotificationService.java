@@ -80,6 +80,7 @@ public class TeamInvitationNotificationService {
 		notificationService.createIfAbsent(recipient.getUser().getId(), type, Map.of(
 				"invitationId", invitation.getId(),
 				"teamId", invitation.getTeam().getId(),
+				"positionId", invitation.getPosition().getId(),
 				"status", invitation.getStatus()
 		), eventId);
 	}

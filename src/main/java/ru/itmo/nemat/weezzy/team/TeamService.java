@@ -17,6 +17,7 @@ import ru.itmo.nemat.weezzy.team.invitation.TeamInvitationService;
 import ru.itmo.nemat.weezzy.team.member.TeamMember;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberId;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberRepository;
+import ru.itmo.nemat.weezzy.team.position.TeamPositionService;
 import ru.itmo.nemat.weezzy.user.AccountAccessService;
 
 import java.util.HashSet;
@@ -38,6 +39,7 @@ public class TeamService {
 	private final TeamAccessService accessService;
 	private final AccountProfileLockService lockService;
 	private final TeamInvitationService invitationService;
+	private final TeamPositionService positionService;
 
 	@Transactional
 	public TeamResponse createForUser(UUID userId, CreateTeamRequest request) {
@@ -52,6 +54,7 @@ public class TeamService {
 		Team team = new Team();
 		team.setOwnerProfile(owner);
 		team.setName(request.name().strip());
+		team.setPurpose(request.purpose().strip());
 		team.setDescription(normalizeDescription(request.description()));
 		teamRepository.save(team);
 
@@ -59,6 +62,7 @@ public class TeamService {
 		member.setId(new TeamMemberId(team.getId(), owner.getId()));
 		member.setTeam(team);
 		member.setProfile(owner);
+		member.setPosition(positionService.createFounderPosition(team, request.ownerPositionName()));
 		member = memberRepository.saveAndFlush(member);
 		return toResponse(team, List.of(member));
 	}
@@ -181,7 +185,7 @@ public class TeamService {
 				.map(member -> TeamMemberResponse.from(member, photosByProfileId.getOrDefault(
 						member.getProfile().getId(), List.of()
 				)))
-				.toList());
+				.toList(), positionService.findResponsesByTeam(team.getId()));
 	}
 
 	private String normalizeDescription(String description) {

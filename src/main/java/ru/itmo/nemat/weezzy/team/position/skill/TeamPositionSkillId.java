@@ -1,4 +1,4 @@
-package ru.itmo.nemat.weezzy.team.request.position.skill;
+package ru.itmo.nemat.weezzy.team.position.skill;
 
 import jakarta.persistence.Embeddable;
 import lombok.AllArgsConstructor;
@@ -12,7 +12,7 @@ import java.util.UUID;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class TeamRequestPositionSkillId implements Serializable {
+public class TeamPositionSkillId implements Serializable {
 	private UUID positionId;
 	private UUID skillId;
 }

@@ -6,23 +6,20 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.nemat.weezzy.common.dto.PageResponse;
-import ru.itmo.nemat.weezzy.connection.block.ProfileBlockService;
 import ru.itmo.nemat.weezzy.outbox.OutboxEventService;
 import ru.itmo.nemat.weezzy.outbox.payload.TeamInvitationResolvedPayload;
 import ru.itmo.nemat.weezzy.outbox.payload.TeamInvitationSentPayload;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
-import ru.itmo.nemat.weezzy.profile.ProfileStatus;
 import ru.itmo.nemat.weezzy.profile.lock.AccountProfileLockService;
 import ru.itmo.nemat.weezzy.team.Team;
 import ru.itmo.nemat.weezzy.team.TeamNotFoundException;
 import ru.itmo.nemat.weezzy.team.TeamAccessService;
 import ru.itmo.nemat.weezzy.team.TeamRepository;
 import ru.itmo.nemat.weezzy.team.invitation.dto.TeamInvitationResponse;
-import ru.itmo.nemat.weezzy.team.member.TeamMember;
-import ru.itmo.nemat.weezzy.team.member.TeamMemberAlreadyExistsException;
-import ru.itmo.nemat.weezzy.team.member.TeamMemberId;
-import ru.itmo.nemat.weezzy.team.member.TeamMemberRepository;
+import ru.itmo.nemat.weezzy.team.member.TeamMemberService;
+import ru.itmo.nemat.weezzy.team.position.TeamPosition;
+import ru.itmo.nemat.weezzy.team.position.TeamPositionService;
 import ru.itmo.nemat.weezzy.user.AccountAccessService;
 
 import java.time.LocalDateTime;
@@ -34,16 +31,18 @@ import java.util.UUID;
 public class TeamInvitationService {
 	private final TeamInvitationRepository repository;
 	private final TeamRepository teamRepository;
-	private final TeamMemberRepository memberRepository;
+	private final TeamMemberService memberService;
 	private final ProfileService profileService;
 	private final AccountAccessService accountAccessService;
 	private final TeamAccessService accessService;
 	private final AccountProfileLockService lockService;
-	private final ProfileBlockService blockService;
+	private final TeamPositionService positionService;
 	private final OutboxEventService outboxEventService;
 
 	@Transactional
-	public TeamInvitationResponse send(UUID userId, UUID teamId, UUID inviteeProfileId) {
+	public TeamInvitationResponse send(
+			UUID userId, UUID teamId, UUID inviteeProfileId, UUID positionId
+	) {
 		Team team = accessService.requireOwnedForUpdate(
 				userId, teamId, List.of(inviteeProfileId)
 		);
@@ -53,8 +52,8 @@ public class TeamInvitationService {
 		}
 		Profile inviter = profileService.findById(ownerId);
 		Profile invitee = profileService.findById(inviteeProfileId);
-		ensureEligible(team, inviter, invitee);
-		ensureNotMember(teamId, inviteeProfileId);
+		TeamPosition position = positionService.findForTeam(teamId, positionId);
+		memberService.ensureCanJoin(team, invitee, position);
 		if (repository.existsByTeamIdAndInviteeProfileIdAndStatus(
 				teamId, inviteeProfileId, TeamInvitationStatus.PENDING
 		)) {
@@ -62,6 +61,7 @@ public class TeamInvitationService {
 		}
 		TeamInvitation invitation = new TeamInvitation();
 		invitation.setTeam(team);
+		invitation.setPosition(position);
 		invitation.setInviterProfile(inviter);
 		invitation.setInviteeProfile(invitee);
 		repository.saveAndFlush(invitation);
@@ -154,13 +154,8 @@ public class TeamInvitationService {
 			throw new TeamInvitationStatusConflictException(invitation.getStatus());
 		}
 		if (status == TeamInvitationStatus.ACCEPTED) {
-			ensureEligible(team, invitation.getInviterProfile(), invitation.getInviteeProfile());
-			ensureNotMember(team.getId(), invitation.getInviteeProfile().getId());
-			TeamMember member = new TeamMember();
-			member.setId(new TeamMemberId(team.getId(), invitation.getInviteeProfile().getId()));
-			member.setTeam(team);
-			member.setProfile(invitation.getInviteeProfile());
-			memberRepository.saveAndFlush(member);
+			memberService.ensureCanJoin(team, invitation.getInviteeProfile(), invitation.getPosition());
+			memberService.add(team, invitation.getInviteeProfile(), invitation.getPosition());
 		}
 		invitation.setStatus(status);
 		invitation.setResolvedAt(LocalDateTime.now());
@@ -184,25 +179,4 @@ public class TeamInvitationService {
 		repository.flush();
 	}
 
-	private void ensureEligible(Team team, Profile inviter, Profile invitee) {
-		accessService.ensureActive(team);
-		if (!team.isOwnedBy(inviter.getId())
-				|| !memberRepository.existsById(new TeamMemberId(team.getId(), inviter.getId()))) {
-			throw new TeamNotFoundException(team.getId());
-		}
-		if (inviter.getStatus() != ProfileStatus.ACTIVE
-				|| invitee.getStatus() != ProfileStatus.ACTIVE
-				|| inviter.getUser() == null || invitee.getUser() == null) {
-			throw new TeamInvitationProfileNotActiveException();
-		}
-		profileService.ensureOwnerAccessAllowed(inviter.getId());
-		profileService.ensureOwnerAccessAllowed(invitee.getId());
-		blockService.ensureInteractionAllowed(inviter.getId(), invitee.getId());
-	}
-
-	private void ensureNotMember(UUID teamId, UUID profileId) {
-		if (memberRepository.existsById(new TeamMemberId(teamId, profileId))) {
-			throw new TeamMemberAlreadyExistsException();
-		}
-	}
 }

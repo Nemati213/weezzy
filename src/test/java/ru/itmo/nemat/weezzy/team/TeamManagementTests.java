@@ -43,6 +43,7 @@ import ru.itmo.nemat.weezzy.team.invitation.TeamInvitationRepository;
 import ru.itmo.nemat.weezzy.team.invitation.TeamInvitationService;
 import ru.itmo.nemat.weezzy.team.invitation.TeamInvitationStatus;
 import ru.itmo.nemat.weezzy.team.member.TeamMember;
+import ru.itmo.nemat.weezzy.team.position.TeamPositionRepository;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberId;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberRepository;
 import ru.itmo.nemat.weezzy.user.AccountTemporarilySuspendedException;
@@ -54,6 +55,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import static ru.itmo.nemat.weezzy.support.TeamPositionTestData.positionId;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -105,6 +107,8 @@ class TeamManagementTests {
 	private TeamRepository teamRepository;
 	@Autowired
 	private TeamMemberRepository memberRepository;
+	@Autowired
+	private TeamPositionRepository teamPositionRepository;
 	@Autowired
 	private ProfileRepository profileRepository;
 	@Autowired
@@ -426,7 +430,7 @@ class TeamManagementTests {
 		Fixture fixture = fixture(false);
 		service.archiveForUser(userId(fixture.owner()), fixture.teamId());
 		assertThatThrownBy(() -> invitationService.send(userId(fixture.owner()),
-				fixture.teamId(), UUID.fromString(fixture.member().id())))
+				fixture.teamId(), UUID.fromString(fixture.member().id()), positionId(jdbcTemplate, fixture.teamId())))
 				.isInstanceOf(TeamNotActiveException.class);
 		assertThatThrownBy(() -> invitationService.accept(userId(fixture.member()),
 				fixture.invitationId())).isInstanceOf(ConflictException.class);
@@ -467,6 +471,7 @@ class TeamManagementTests {
 	void failedPendingCancellationRollsBackMembershipRemoval() throws Exception {
 		Fixture fixture = fixture(false);
 		TeamMember member = new TeamMember();
+		member.setPosition(teamPositionRepository.getReferenceById(positionId(jdbcTemplate, fixture.teamId())));
 		member.setId(new TeamMemberId(fixture.teamId(), UUID.fromString(fixture.member().id())));
 		member.setTeam(teamRepository.findById(fixture.teamId()).orElseThrow());
 		member.setProfile(profileRepository.findById(
@@ -508,7 +513,7 @@ class TeamManagementTests {
 		List<RuntimeException> outcomes = race(
 				() -> service.archiveForUser(userId(fixture.owner()), fixture.teamId()),
 				() -> invitationService.send(userId(fixture.owner()), fixture.teamId(),
-						UUID.fromString(invitee.id())));
+						UUID.fromString(invitee.id()), positionId(jdbcTemplate, fixture.teamId())));
 		assertThat(outcomes.get(0)).isNull();
 		if (outcomes.get(1) != null) {
 			assertThat(outcomes.get(1)).isInstanceOf(TeamNotActiveException.class);
@@ -580,8 +585,8 @@ class TeamManagementTests {
 		TestProfile owner = profile("Owner");
 		TestProfile member = profile("Member");
 		UUID teamId = service.createForUser(userId(owner),
-				new CreateTeamRequest("Team", null)).id();
-		UUID id = invitationService.send(userId(owner), teamId, UUID.fromString(member.id())).id();
+				new CreateTeamRequest("Team", null, "Build project", "Backend")).id();
+		UUID id = invitationService.send(userId(owner), teamId, UUID.fromString(member.id()), positionId(jdbcTemplate, teamId)).id();
 		if (join) {
 			invitationService.accept(userId(member), id);
 		}
@@ -601,7 +606,7 @@ class TeamManagementTests {
 
 	private UUID invite(Fixture fixture, TestProfile invitee) {
 		return invitationService.send(userId(fixture.owner()), fixture.teamId(),
-				UUID.fromString(invitee.id())).id();
+				UUID.fromString(invitee.id()), positionId(jdbcTemplate, fixture.teamId())).id();
 	}
 
 	private TeamInvitationStatus invitationStatus(Fixture fixture) {

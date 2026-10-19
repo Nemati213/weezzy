@@ -40,6 +40,11 @@ public class Team {
 	@Column(nullable = false, length = 120)
 	private String name;
 
+	@NotBlank
+	@Size(max = 2000)
+	@Column(nullable = false, length = 2000)
+	private String purpose;
+
 	@Size(max = 2000)
 	@Column(length = 2000)
 	private String description;

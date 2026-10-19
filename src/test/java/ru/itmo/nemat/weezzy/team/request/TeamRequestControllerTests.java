@@ -40,8 +40,8 @@ import ru.itmo.nemat.weezzy.team.member.TeamMemberRepository;
 import ru.itmo.nemat.weezzy.team.request.dto.CreateRecruitmentRequest;
 import ru.itmo.nemat.weezzy.team.request.dto.UpdateRecruitmentRequest;
 import ru.itmo.nemat.weezzy.team.request.position.TeamRequestPositionRepository;
-import ru.itmo.nemat.weezzy.team.request.position.skill.TeamRequestPositionSkill;
-import ru.itmo.nemat.weezzy.team.request.position.skill.TeamRequestPositionSkillRepository;
+import ru.itmo.nemat.weezzy.team.position.skill.TeamPositionSkill;
+import ru.itmo.nemat.weezzy.team.position.skill.TeamPositionSkillRepository;
 import ru.itmo.nemat.weezzy.user.AccountTemporarilySuspendedException;
 import ru.itmo.nemat.weezzy.user.UserRepository;
 import ru.itmo.nemat.weezzy.user.accountdeletion.AccountDeletionService;
@@ -55,6 +55,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Set;
+import ru.itmo.nemat.weezzy.team.position.TeamPositionService;
+import ru.itmo.nemat.weezzy.team.position.TeamPositionCapacityException;
+import ru.itmo.nemat.weezzy.team.position.dto.CreateTeamPositionRequest;
+import ru.itmo.nemat.weezzy.team.position.dto.UpdateTeamPositionRequest;
+import ru.itmo.nemat.weezzy.team.request.position.TeamRequestPosition;
+import static ru.itmo.nemat.weezzy.support.TeamPositionTestData.positionId;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -62,7 +69,8 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyList;
+import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -97,10 +105,12 @@ class TeamRequestControllerTests {
 	private TeamRequestService service;
 	@Autowired
 	private TeamRequestRepository requestRepository;
-	@Autowired
-	private TeamRequestPositionRepository positionRepository;
 	@MockitoSpyBean
-	private TeamRequestPositionSkillRepository positionSkillRepository;
+	private TeamRequestPositionRepository positionRepository;
+	@Autowired
+	private TeamPositionService teamPositionService;
+	@Autowired
+	private TeamPositionSkillRepository positionSkillRepository;
 	@Autowired
 	private TeamService teamService;
 	@Autowired
@@ -138,8 +148,6 @@ class TeamRequestControllerTests {
 		Map<String, Object> body = body(fixture);
 		body.put("title", "  Hackathon  ");
 		body.put("description", "  Build a service  ");
-		body.put("positions", List.of(position("  Backend  ", 1, fixture.skillId()),
-				position("Designer", 1, fixture.skillId())));
 		String response = create(fixture.owner(), fixture.teamId(), body)
 				.andExpect(status().isCreated())
 				.andExpect(header().exists("Location"))
@@ -147,10 +155,11 @@ class TeamRequestControllerTests {
 				.andExpect(jsonPath("$.title").value("Hackathon"))
 				.andExpect(jsonPath("$.description").value("Build a service"))
 				.andExpect(jsonPath("$.status").value("OPEN"))
-				.andExpect(jsonPath("$.targetTeamSize").value(3))
+				.andExpect(jsonPath("$.availableTeamSlotsCount").value(2))
 				.andExpect(jsonPath("$.positions.length()").value(2))
-				.andExpect(jsonPath("$.positions[0].name").value("Backend"))
-				.andExpect(jsonPath("$.positions[0].slotsCount").value(1))
+				.andExpect(jsonPath("$.positions[*].name")
+						.value(containsInAnyOrder("Backend", "Designer")))
+				.andExpect(jsonPath("$.positions[0].capacity").value(1))
 				.andExpect(jsonPath("$.positions[0].skills[0].id")
 						.value(fixture.skillId().toString()))
 				.andExpect(jsonPath("$.createdAt").isNotEmpty())
@@ -264,7 +273,7 @@ class TeamRequestControllerTests {
 		for (boolean join : List.of(false, true)) {
 			if (join) {
 				UUID invitation = invitationService.send(userId(fixture.owner()), fixture.teamId(),
-						UUID.fromString(fixture.viewer().id())).id();
+						UUID.fromString(fixture.viewer().id()), positionId(jdbcTemplate, fixture.teamId())).id();
 				invitationService.accept(userId(fixture.viewer()), invitation);
 			}
 			create(fixture.viewer(), fixture.teamId(), body(fixture))
@@ -278,8 +287,7 @@ class TeamRequestControllerTests {
 
 	@ParameterizedTest
 	@ValueSource(strings = {"blank-title", "long-title", "long-description", "past-deadline",
-			"missing-deadline", "zero-size", "no-positions", "null-position", "blank-position",
-			"long-position", "zero-slots", "null-skills", "null-skill", "overflow-slots"})
+			"missing-deadline", "missing-positions", "no-positions", "null-position"})
 	void invalidCreatePayloadsAreRejectedWithoutPartialRows(String invalid) throws Exception {
 		Fixture fixture = fixture();
 		Map<String, Object> body = body(fixture);
@@ -290,25 +298,9 @@ class TeamRequestControllerTests {
 			case "past-deadline" -> body.put("recruitmentDeadline",
 					LocalDateTime.now().minusMinutes(1));
 			case "missing-deadline" -> body.remove("recruitmentDeadline");
-			case "zero-size" -> body.put("targetTeamSize", 0);
-			case "no-positions" -> body.put("positions", List.of());
-			case "null-position" -> body.put("positions", Arrays.asList((Object) null));
-			case "blank-position" -> body.put("positions",
-					List.of(position("   ", 2, fixture.skillId())));
-			case "long-position" -> body.put("positions",
-					List.of(position("x".repeat(121), 2, fixture.skillId())));
-			case "zero-slots" -> body.put("positions",
-					List.of(position("Backend", 0, fixture.skillId())));
-			case "null-skills", "null-skill" -> {
-				Map<String, Object> position = position("Backend", 2, fixture.skillId());
-				position.put("skillIds", invalid.equals("null-skills")
-						? null : Arrays.asList((Object) null));
-				body.put("positions", List.of(position));
-			}
-			case "overflow-slots" -> body.put("positions", List.of(
-					position("Backend", Integer.MAX_VALUE, fixture.skillId()),
-					position("Designer", Integer.MAX_VALUE, fixture.skillId()),
-					position("Tester", 4, fixture.skillId())));
+			case "missing-positions" -> body.remove("positionIds");
+			case "no-positions" -> body.put("positionIds", List.of());
+			case "null-position" -> body.put("positionIds", Arrays.asList((Object) null));
 			default -> throw new IllegalArgumentException(invalid);
 		}
 		long count = requestRepository.count();
@@ -317,13 +309,14 @@ class TeamRequestControllerTests {
 	}
 
 	@Test
-	void invalidSizeMissingSkillAndMissingResourcesAreHandled() throws Exception {
+	void missingOrForeignPositionsAndMissingResourcesAreHandled() throws Exception {
 		Fixture fixture = fixture();
 		Map<String, Object> body = body(fixture);
-		body.put("targetTeamSize", 4);
-		create(fixture.owner(), fixture.teamId(), body).andExpect(status().isBadRequest());
+		Fixture other = fixture();
+		body.put("positionIds", List.of(other.backendId()));
+		create(fixture.owner(), fixture.teamId(), body).andExpect(status().isNotFound());
 		body = body(fixture);
-		body.put("positions", List.of(position("Backend", 2, UUID.randomUUID())));
+		body.put("positionIds", List.of(UUID.randomUUID()));
 		create(fixture.owner(), fixture.teamId(), body).andExpect(status().isNotFound());
 		create(fixture.owner(), UUID.randomUUID(), body(fixture))
 				.andExpect(status().isNotFound());
@@ -346,14 +339,11 @@ class TeamRequestControllerTests {
 	}
 
 	@Test
-	void updateValidatesDeadlineSizeAndRequiredFields() throws Exception {
+	void updateValidatesDeadlineAndRequiredFields() throws Exception {
 		Fixture fixture = fixture();
 		UUID id = createId(fixture);
 		Map<String, Object> update = updateBody();
 		update.put("recruitmentDeadline", LocalDateTime.now().minusMinutes(1));
-		update(fixture.owner(), id, update).andExpect(status().isBadRequest());
-		update = updateBody();
-		update.put("targetTeamSize", 4);
 		update(fixture.owner(), id, update).andExpect(status().isBadRequest());
 		update(fixture.owner(), id, Map.of("title", "Missing fields"))
 				.andExpect(status().isBadRequest());
@@ -436,7 +426,7 @@ class TeamRequestControllerTests {
 		long positions = positionRepository.count();
 		long skills = positionSkillRepository.count();
 		doThrow(new DataIntegrityViolationException("Test save failure"))
-				.when(positionSkillRepository).saveAll(anyList());
+				.when(positionRepository).save(any(TeamRequestPosition.class));
 		assertThatThrownBy(() -> create(fixture.owner(), fixture.teamId(), body(fixture)))
 				.hasRootCauseInstanceOf(DataIntegrityViolationException.class);
 		assertThat(requestRepository.count()).isEqualTo(requests);
@@ -448,11 +438,10 @@ class TeamRequestControllerTests {
 	void positionsCanHaveEmptySkillSetsAndBlankDescriptionsAreNormalized() throws Exception {
 		Fixture fixture = fixture();
 		Map<String, Object> body = body(fixture);
-		Map<String, Object> position = position("Backend", 2, fixture.skillId());
-		position.put("skillIds", List.of());
-		position.put("description", "   ");
+		teamPositionService.updateForUser(userId(fixture.owner()), fixture.teamId(),
+				fixture.backendId(), new UpdateTeamPositionRequest("Backend", "   ", 1, Set.of()));
 		body.put("description", "   ");
-		body.put("positions", List.of(position));
+		body.put("positionIds", List.of(fixture.backendId()));
 		create(fixture.owner(), fixture.teamId(), body)
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.description").isEmpty())
@@ -497,10 +486,10 @@ class TeamRequestControllerTests {
 	}
 
 	@Test
-	void creationWaitingForMembershipChangeUsesCommittedMemberCount() throws Exception {
+	void creationWaitingForMembershipChangeRechecksPositionCapacity() throws Exception {
 		Fixture fixture = fixture();
 		UUID invitation = invitationService.send(userId(fixture.owner()), fixture.teamId(),
-				UUID.fromString(fixture.viewer().id())).id();
+				UUID.fromString(fixture.viewer().id()), fixture.backendId()).id();
 		CreateRecruitmentRequest request = objectMapper.convertValue(body(fixture),
 				CreateRecruitmentRequest.class);
 		try (var executor = Executors.newSingleThreadExecutor()) {
@@ -514,16 +503,11 @@ class TeamRequestControllerTests {
 				return pending;
 			});
 			assertThat(future.get(20, TimeUnit.SECONDS))
-					.isInstanceOf(InvalidRecruitmentSizeException.class);
+					.isInstanceOf(TeamPositionCapacityException.class);
 		}
 		Map<String, Object> adjusted = body(fixture);
-		adjusted.put("targetTeamSize", 4);
-		UUID id = id(create(fixture.owner(), fixture.teamId(), adjusted)
-				.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
-		update(fixture.owner(), id, updateBody()).andExpect(status().isBadRequest());
-		Map<String, Object> update = updateBody();
-		update.put("targetTeamSize", 4);
-		update(fixture.owner(), id, update).andExpect(status().isOk());
+		adjusted.put("positionIds", List.of(fixture.designerId()));
+		create(fixture.owner(), fixture.teamId(), adjusted).andExpect(status().isCreated());
 	}
 
 	@Test
@@ -604,11 +588,15 @@ class TeamRequestControllerTests {
 		TestProfile owner = profile("Owner");
 		TestProfile viewer = profile("Viewer");
 		UUID teamId = teamService.createForUser(userId(owner),
-				new CreateTeamRequest("Team", null)).id();
+				new CreateTeamRequest("Team", null, "Build project", "Backend")).id();
 		Skill skill = new Skill();
 		skill.setName("Java " + UUID.randomUUID());
 		UUID skillId = skillRepository.saveAndFlush(skill).getId();
-		return new Fixture(owner, viewer, teamId, skillId);
+		UUID backendId = teamPositionService.createForUser(userId(owner), teamId,
+				new CreateTeamPositionRequest("  Backend  ", null, 1, Set.of(skillId))).id();
+		UUID designerId = teamPositionService.createForUser(userId(owner), teamId,
+				new CreateTeamPositionRequest("Designer", null, 1, Set.of(skillId))).id();
+		return new Fixture(owner, viewer, teamId, skillId, backendId, designerId);
 	}
 
 	private TestProfile profile(String name) throws Exception {
@@ -636,8 +624,7 @@ class TeamRequestControllerTests {
 
 	private Map<String, Object> body(Fixture fixture) {
 		Map<String, Object> body = updateBody();
-		body.put("positions", List.of(position("Backend", 1, fixture.skillId()),
-				position("Designer", 1, fixture.skillId())));
+		body.put("positionIds", List.of(fixture.backendId(), fixture.designerId()));
 		return body;
 	}
 
@@ -646,18 +633,9 @@ class TeamRequestControllerTests {
 		body.put("title", "Hackathon");
 		body.put("description", "Build a service");
 		body.put("recruitmentDeadline", LocalDateTime.now().plusDays(7).withNano(0));
-		body.put("targetTeamSize", 3);
 		return body;
 	}
 
-	private Map<String, Object> position(String name, int slots, UUID skillId) {
-		Map<String, Object> body = new HashMap<>();
-		body.put("name", name);
-		body.put("description", "Tasks");
-		body.put("slotsCount", slots);
-		body.put("skillIds", List.of(skillId));
-		return body;
-	}
 
 	private ResultActions create(TestProfile owner, UUID teamId, Map<String, Object> body)
 			throws Exception {
@@ -703,6 +681,7 @@ class TeamRequestControllerTests {
 		return "/api/teams/" + teamId + "/requests/me";
 	}
 
-	private record Fixture(TestProfile owner, TestProfile viewer, UUID teamId, UUID skillId) {
+	private record Fixture(TestProfile owner, TestProfile viewer, UUID teamId, UUID skillId,
+			UUID backendId, UUID designerId) {
 	}
 }

@@ -31,6 +31,8 @@ import ru.itmo.nemat.weezzy.team.dto.CreateTeamRequest;
 import ru.itmo.nemat.weezzy.team.invitation.TeamInvitation;
 import ru.itmo.nemat.weezzy.team.invitation.TeamInvitationRepository;
 import ru.itmo.nemat.weezzy.team.member.TeamMember;
+import ru.itmo.nemat.weezzy.team.position.TeamPositionRepository;
+import static ru.itmo.nemat.weezzy.support.TeamPositionTestData.positionId;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberId;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberRepository;
 import tools.jackson.databind.ObjectMapper;
@@ -81,6 +83,8 @@ class TeamControllerTests {
 
 	@Autowired
 	private TeamRepository teamRepository;
+	@Autowired
+	private TeamPositionRepository teamPositionRepository;
 
 	@MockitoSpyBean
 	private TeamMemberRepository memberRepository;
@@ -160,6 +164,8 @@ class TeamControllerTests {
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(objectMapper.writeValueAsString(Map.of(
 								"name", "Team",
+								"purpose", "Build project",
+								"ownerPositionName", "Backend",
 								"ownerProfileId", other.id(),
 								"members", List.of(other.id()),
 								"status", "ARCHIVED"
@@ -194,11 +200,11 @@ class TeamControllerTests {
 
 	static Stream<CreateTeamRequest> invalidRequests() {
 		return Stream.of(
-				new CreateTeamRequest(null, null),
-				new CreateTeamRequest("", null),
-				new CreateTeamRequest(" \t\n ", null),
-				new CreateTeamRequest("a".repeat(121), null),
-				new CreateTeamRequest("Team", "a".repeat(2001))
+				new CreateTeamRequest(null, null, "Build project", "Backend"),
+				new CreateTeamRequest("", null, "Build project", "Backend"),
+				new CreateTeamRequest(" \t\n ", null, "Build project", "Backend"),
+				new CreateTeamRequest("a".repeat(121), null, "Build project", "Backend"),
+				new CreateTeamRequest("Team", "a".repeat(2001), "Build project", "Backend")
 		);
 	}
 
@@ -268,6 +274,7 @@ class TeamControllerTests {
 		TestProfile invitee = activeProfile("Invitee");
 		TeamInvitation invitation = new TeamInvitation();
 		invitation.setTeam(teamRepository.findById(teamId).orElseThrow());
+		invitation.setPosition(teamPositionRepository.getReferenceById(positionId(jdbcTemplate, teamId)));
 		invitation.setInviterProfile(profileRepository.findById(
 				UUID.fromString(owner.id())
 		).orElseThrow());
@@ -407,7 +414,7 @@ class TeamControllerTests {
 	) throws Exception {
 		return mockMvc.perform(user.authorize(post("/api/teams"))
 				.contentType(MediaType.APPLICATION_JSON)
-				.content(objectMapper.writeValueAsString(new CreateTeamRequest(name, description))));
+				.content(objectMapper.writeValueAsString(new CreateTeamRequest(name, description, "Build project", "Backend"))));
 	}
 
 	private UUID createTeam(TestProfile owner) throws Exception {
@@ -424,6 +431,7 @@ class TeamControllerTests {
 		member.setId(new TeamMemberId(teamId, UUID.fromString(profile.id())));
 		member.setTeam(teamRepository.findById(teamId).orElseThrow());
 		member.setProfile(profileRepository.findById(UUID.fromString(profile.id())).orElseThrow());
+		member.setPosition(teamPositionRepository.getReferenceById(positionId(jdbcTemplate, teamId)));
 		memberRepository.saveAndFlush(member);
 	}
 

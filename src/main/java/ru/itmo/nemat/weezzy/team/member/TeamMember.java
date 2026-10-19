@@ -13,6 +13,7 @@ import lombok.Getter;
 import lombok.Setter;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.team.Team;
+import ru.itmo.nemat.weezzy.team.position.TeamPosition;
 
 import java.time.LocalDateTime;
 
@@ -33,6 +34,10 @@ public class TeamMember {
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
 	@JoinColumn(name = "profile_id", nullable = false)
 	private Profile profile;
+
+	@ManyToOne(fetch = FetchType.LAZY, optional = false)
+	@JoinColumn(name = "position_id", nullable = false)
+	private TeamPosition position;
 
 	@Column(name = "joined_at", nullable = false, updatable = false)
 	private LocalDateTime joinedAt;

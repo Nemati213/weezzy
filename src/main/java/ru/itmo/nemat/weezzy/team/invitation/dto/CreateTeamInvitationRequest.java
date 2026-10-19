@@ -4,5 +4,7 @@ import jakarta.validation.constraints.NotNull;
 
 import java.util.UUID;
 
-public record CreateTeamInvitationRequest(@NotNull UUID inviteeProfileId) {
+public record CreateTeamInvitationRequest(
+		@NotNull UUID inviteeProfileId, @NotNull UUID positionId
+) {
 }

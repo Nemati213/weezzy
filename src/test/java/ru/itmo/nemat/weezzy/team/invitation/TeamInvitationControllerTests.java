@@ -47,6 +47,7 @@ import ru.itmo.nemat.weezzy.support.AuthenticatedTestUser.TestProfile;
 import ru.itmo.nemat.weezzy.team.TeamRepository;
 import ru.itmo.nemat.weezzy.team.invitation.dto.CreateTeamInvitationRequest;
 import ru.itmo.nemat.weezzy.team.member.TeamMember;
+import ru.itmo.nemat.weezzy.team.position.TeamPositionRepository;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberId;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberRepository;
 import ru.itmo.nemat.weezzy.user.AccountTemporarilySuspendedException;
@@ -60,6 +61,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import static ru.itmo.nemat.weezzy.support.TeamPositionTestData.positionId;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -111,6 +113,8 @@ class TeamInvitationControllerTests {
 
 	@Autowired
 	private TeamMemberRepository memberRepository;
+	@Autowired
+	private TeamPositionRepository teamPositionRepository;
 
 	@Autowired
 	private ProfileRepository profileRepository;
@@ -375,6 +379,7 @@ class TeamInvitationControllerTests {
 	void membershipAddedThroughAnotherFlowPreventsAcceptance() throws Exception {
 		Fixture fixture = fixture();
 		TeamMember member = new TeamMember();
+		member.setPosition(teamPositionRepository.getReferenceById(positionId(jdbcTemplate, fixture.teamId())));
 		member.setId(new TeamMemberId(fixture.teamId(), UUID.fromString(fixture.invitee().id())));
 		member.setTeam(teamRepository.findById(fixture.teamId()).orElseThrow());
 		member.setProfile(profileRepository.findById(UUID.fromString(fixture.invitee().id())).orElseThrow());
@@ -440,7 +445,7 @@ class TeamInvitationControllerTests {
 				recipient, resolved.getId()
 		).orElseThrow();
 		assertThat(notification.getType()).isEqualTo(expectedType);
-		assertThat(notification.getPayload()).containsOnlyKeys("teamId", "invitationId", "status");
+		assertThat(notification.getPayload()).containsOnlyKeys("teamId", "invitationId", "positionId", "status");
 		assertThat(eventRepository.findAll()).extracting(OutboxEvent::getStatus)
 				.containsOnly(OutboxEventStatus.PROCESSED);
 	}
@@ -487,7 +492,7 @@ class TeamInvitationControllerTests {
 		TestProfile owner = activeProfile("Owner");
 		UUID teamId = createTeam(owner);
 		TestProfile invitee = activeProfile("Invitee");
-		Runnable send = () -> service.send(userId(owner), teamId, UUID.fromString(invitee.id()));
+		Runnable send = () -> service.send(userId(owner), teamId, UUID.fromString(invitee.id()), positionId(jdbcTemplate, teamId));
 		List<RuntimeException> results = race(send, send);
 		assertThat(results.stream().filter(result -> result == null).count()).isEqualTo(1);
 		assertThat(results.stream().filter(result -> result != null).findFirst().orElseThrow())
@@ -640,7 +645,7 @@ class TeamInvitationControllerTests {
 
 	private UUID createTeam(TestProfile owner) throws Exception {
 		String response = mockMvc.perform(owner.owner().authorize(post("/api/teams"))
-						.contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Team\"}"))
+						.contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Team\",\"purpose\":\"Build project\",\"ownerPositionName\":\"Backend\"}"))
 				.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
 		return UUID.fromString(objectMapper.readTree(response).path("id").asText());
 	}
@@ -648,7 +653,7 @@ class TeamInvitationControllerTests {
 	private ResultActions send(TestProfile owner, UUID teamId, UUID inviteeId) throws Exception {
 		return mockMvc.perform(owner.owner().authorize(post("/api/teams/" + teamId + "/invitations"))
 				.contentType(MediaType.APPLICATION_JSON)
-				.content(objectMapper.writeValueAsString(new CreateTeamInvitationRequest(inviteeId))));
+				.content(objectMapper.writeValueAsString(new CreateTeamInvitationRequest(inviteeId, positionId(jdbcTemplate, teamId)))));
 	}
 
 	private UUID sendId(TestProfile owner, UUID teamId, TestProfile invitee) throws Exception {

@@ -15,7 +15,7 @@ public record TeamRequestResponse(
 		String description,
 		TeamRequestStatus status,
 		LocalDateTime recruitmentDeadline,
-		int targetTeamSize,
+		long availableTeamSlotsCount,
 		List<TeamRequestPositionResponse> positions,
 		LocalDateTime createdAt,
 		LocalDateTime updatedAt
@@ -30,7 +30,7 @@ public record TeamRequestResponse(
 				request.getDescription(),
 				request.getStatus(),
 				request.getRecruitmentDeadline(),
-				request.getTargetTeamSize(),
+				positions.stream().mapToLong(TeamRequestPositionResponse::remainingSlotsCount).sum(),
 				List.copyOf(positions),
 				request.getCreatedAt(),
 				request.getUpdatedAt()

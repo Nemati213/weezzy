@@ -36,7 +36,7 @@ public class TeamInvitationController {
 			@Valid @RequestBody CreateTeamInvitationRequest request
 	) {
 		TeamInvitationResponse invitation = service.send(
-				user.id(), teamId, request.inviteeProfileId()
+				user.id(), teamId, request.inviteeProfileId(), request.positionId()
 		);
 		return ResponseEntity.created(URI.create("/api/team-invitations/" + invitation.id()))
 				.body(invitation);

@@ -8,9 +8,9 @@ import ru.itmo.nemat.weezzy.connection.block.ProfileBlockService;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 import ru.itmo.nemat.weezzy.profile.ProfileStatus;
-import ru.itmo.nemat.weezzy.profile.lock.AccountProfileLockService;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberId;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberRepository;
+import ru.itmo.nemat.weezzy.profile.lock.AccountProfileLockService;
 import ru.itmo.nemat.weezzy.user.AccountAccessService;
 
 import java.util.Collection;
@@ -97,6 +97,23 @@ public class TeamAccessService {
 		if (team.getStatus() != TeamStatus.ACTIVE) {
 			throw new TeamNotActiveException(team.getId());
 		}
+	}
+
+	@Transactional(propagation = Propagation.MANDATORY)
+	public Team lockForInteraction(
+			UUID userId, UUID teamId, Collection<UUID> relatedProfileIds
+	) {
+		UUID ownerId = teamRepository.findOwnerProfileId(teamId)
+				.orElseThrow(() -> new TeamNotFoundException(teamId));
+		Set<UUID> profileIds = new HashSet<>(relatedProfileIds);
+		profileIds.add(ownerId);
+		lockService.lock(profileIds, userId);
+		Team team = teamRepository.findByIdForUpdate(teamId)
+				.orElseThrow(() -> new TeamNotFoundException(teamId));
+		if (userId != null) {
+			accountAccessService.ensureAccessAllowed(userId);
+		}
+		return team;
 	}
 
 	private UUID actorProfileIdForUser(UUID userId) {

@@ -1,4 +1,4 @@
-package ru.itmo.nemat.weezzy.team.request.position.skill;
+package ru.itmo.nemat.weezzy.team.position.skill;
 
 import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
@@ -10,20 +10,20 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 import ru.itmo.nemat.weezzy.skill.Skill;
-import ru.itmo.nemat.weezzy.team.request.position.TeamRequestPosition;
+import ru.itmo.nemat.weezzy.team.position.TeamPosition;
 
 @Entity
-@Table(name = "team_request_position_skills")
+@Table(name = "team_position_skills")
 @Getter
 @Setter
-public class TeamRequestPositionSkill {
+public class TeamPositionSkill {
 	@EmbeddedId
-	private TeamRequestPositionSkillId id;
+	private TeamPositionSkillId id;
 
 	@MapsId("positionId")
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
 	@JoinColumn(name = "position_id", nullable = false)
-	private TeamRequestPosition position;
+	private TeamPosition position;
 
 	@MapsId("skillId")
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
