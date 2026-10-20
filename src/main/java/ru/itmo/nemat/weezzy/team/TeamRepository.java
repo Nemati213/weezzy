@@ -7,12 +7,18 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface TeamRepository extends JpaRepository<Team, UUID> {
 	@EntityGraph(attributePaths = {"ownerProfile", "ownerProfile.user"})
-	Optional<Team> findByIdAndStatus(UUID id, TeamStatus status);
+	@Query("SELECT team FROM Team team WHERE team.id = :id AND "
+			+ TeamVisibility.CONDITION)
+	Optional<Team> findVisibleById(
+			@Param("id") UUID id, @Param("viewerProfileId") UUID viewerProfileId,
+			@Param("now") LocalDateTime now
+	);
 
 	@Query("SELECT team.ownerProfile.id FROM Team team WHERE team.id = :teamId")
 	Optional<UUID> findOwnerProfileId(@Param("teamId") UUID teamId);

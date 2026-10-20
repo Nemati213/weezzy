@@ -1,6 +1,7 @@
 package ru.itmo.nemat.weezzy.team.request.position;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -13,6 +14,7 @@ public interface TeamRequestPositionRepository
 		extends JpaRepository<TeamRequestPosition, UUID> {
 	List<TeamRequestPosition> findByRequestIdOrderByCreatedAtAscIdAsc(UUID requestId);
 
+	@EntityGraph(attributePaths = {"position"})
 	List<TeamRequestPosition> findByRequestIdInOrderByCreatedAtAscIdAsc(
 			Collection<UUID> requestIds
 	);

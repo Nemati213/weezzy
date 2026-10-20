@@ -31,6 +31,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
@@ -47,6 +49,23 @@ public class TeamRequestService {
 	private final TeamAccessService teamAccessService;
 	private final ProfileService profileService;
 	private final AccountAccessService accountAccessService;
+
+	@Transactional(readOnly = true)
+	public PageResponse<TeamRequestResponse> searchForUser(
+			UUID userId, String query, Set<UUID> skillIds, Pageable pageable
+	) {
+		accountAccessService.ensureAccessAllowed(userId);
+		UUID viewerId = profileService.findOptionalIdByUserId(userId).orElse(null);
+		Set<UUID> skills = skillIds == null ? Set.of() : Set.copyOf(skillIds);
+		String text = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
+		String pattern = "%" + text.replace("!", "!!")
+				.replace("%", "!%").replace("_", "!_") + "%";
+		var page = requestRepository.search(viewerId, LocalDateTime.now(), pattern,
+				skills, skills.size(), pageable);
+		Map<UUID, TeamRequestResponse> responses = toResponses(page.getContent()).stream()
+				.collect(Collectors.toMap(TeamRequestResponse::id, Function.identity()));
+		return PageResponse.from(page.map(request -> responses.get(request.getId())));
+	}
 
 	@Transactional
 	public TeamRequestResponse createForUser(
