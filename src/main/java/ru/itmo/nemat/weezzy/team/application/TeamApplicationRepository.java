@@ -9,12 +9,23 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface TeamApplicationRepository extends JpaRepository<TeamApplication, UUID> {
 	boolean existsByPositionIdAndApplicantProfileIdAndStatus(
 			UUID positionId, UUID applicantProfileId, TeamApplicationStatus status
+	);
+
+	@Query("""
+			SELECT MAX(application.resolvedAt) FROM TeamApplication application
+			WHERE application.applicantProfile.id = :profileId
+			  AND application.position.position.id = :teamPositionId
+			  AND application.status = 'DECLINED'
+			""")
+	Optional<LocalDateTime> findLastDeclinedAt(
+			@Param("profileId") UUID profileId, @Param("teamPositionId") UUID teamPositionId
 	);
 
 	@Query("""

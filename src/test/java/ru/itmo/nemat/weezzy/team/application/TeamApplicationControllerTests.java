@@ -193,8 +193,13 @@ class TeamApplicationControllerTests {
 		if (!action.equals("accept")) {
 			act(fixture.owner(), id, "accept").andExpect(status().isConflict());
 			assertThat(memberService.countByPosition(teamPositionId(fixture))).isZero();
-			send(fixture.applicant(), fixture.positionId(), "")
-					.andExpect(status().isCreated()).andExpect(jsonPath("$.message").isEmpty());
+			if (action.equals("decline")) {
+				send(fixture.applicant(), fixture.positionId(), "")
+						.andExpect(status().isConflict());
+			} else {
+				send(fixture.applicant(), fixture.positionId(), "")
+						.andExpect(status().isCreated()).andExpect(jsonPath("$.message").isEmpty());
+			}
 		} else {
 			act(fixture.applicant(), id, "withdraw").andExpect(status().isConflict());
 		}

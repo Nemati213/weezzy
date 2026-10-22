@@ -20,6 +20,7 @@ import ru.itmo.nemat.weezzy.team.request.position.TeamRequestPosition;
 import ru.itmo.nemat.weezzy.team.request.position.TeamRequestPositionNotFoundException;
 import ru.itmo.nemat.weezzy.user.AccountAccessService;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -34,6 +35,8 @@ public class TeamApplicationService {
 	private final ProfileService profileService;
 	private final AccountAccessService accountAccessService;
 	private final OutboxEventService outboxEventService;
+	private final TeamApplicationProperties properties;
+	private final Clock clock;
 
 	@Transactional
 	public TeamApplicationResponse send(
@@ -50,6 +53,7 @@ public class TeamApplicationService {
 				positionId, profileId, TeamApplicationStatus.PENDING)) {
 			throw new DuplicatePendingTeamApplicationException();
 		}
+		ensureReapplicationAllowed(profileId, position.getPosition().getId());
 		TeamApplication application = new TeamApplication();
 		application.setPosition(position);
 		application.setApplicantProfile(applicant);
@@ -150,10 +154,19 @@ public class TeamApplicationService {
 					application.getApplicantProfile(), position.getPosition());
 		}
 		application.setStatus(status);
-		application.setResolvedAt(LocalDateTime.now());
+		application.setResolvedAt(LocalDateTime.now(clock));
 		repository.saveAndFlush(application);
 		publish(application);
 		return TeamApplicationResponse.from(application);
+	}
+
+	private void ensureReapplicationAllowed(UUID profileId, UUID teamPositionId) {
+		repository.findLastDeclinedAt(profileId, teamPositionId).ifPresent(declinedAt -> {
+			LocalDateTime retryAt = declinedAt.plus(properties.reapplicationCooldown());
+			if (LocalDateTime.now(clock).isBefore(retryAt)) {
+				throw new TeamApplicationCooldownException(retryAt);
+			}
+		});
 	}
 
 	private void ensureEligible(TeamRequestPosition position, Profile applicant, UUID userId) {
