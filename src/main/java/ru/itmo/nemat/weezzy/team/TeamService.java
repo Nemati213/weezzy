@@ -3,7 +3,6 @@ package ru.itmo.nemat.weezzy.team;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.itmo.nemat.weezzy.connection.block.ProfileBlockRepository;
 import ru.itmo.nemat.weezzy.profile.Profile;
 import ru.itmo.nemat.weezzy.profile.ProfileService;
 import ru.itmo.nemat.weezzy.profile.ProfileStatus;
@@ -17,15 +16,13 @@ import ru.itmo.nemat.weezzy.team.invitation.TeamInvitationService;
 import ru.itmo.nemat.weezzy.team.member.TeamMember;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberId;
 import ru.itmo.nemat.weezzy.team.member.TeamMemberRepository;
+import ru.itmo.nemat.weezzy.team.member.TeamMemberVisibilityService;
 import ru.itmo.nemat.weezzy.team.position.TeamPositionService;
 import ru.itmo.nemat.weezzy.user.AccountAccessService;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -34,7 +31,7 @@ public class TeamService {
 	private final TeamMemberRepository memberRepository;
 	private final ProfileService profileService;
 	private final AccountAccessService accountAccessService;
-	private final ProfileBlockRepository blockRepository;
+	private final TeamMemberVisibilityService memberVisibilityService;
 	private final ProfilePhotoService photoService;
 	private final TeamAccessService accessService;
 	private final AccountProfileLockService lockService;
@@ -73,7 +70,7 @@ public class TeamService {
 		UUID viewerProfileId = profileService.findOptionalByUserId(userId)
 				.map(Profile::getId)
 				.orElse(null);
-		List<TeamMember> members = visibleMembers(
+		List<TeamMember> members = memberVisibilityService.filter(
 				memberRepository.findByTeamIdOrderByJoinedAtAscProfileIdAsc(teamId),
 				viewerProfileId
 		);
@@ -137,43 +134,6 @@ public class TeamService {
 		}
 		memberRepository.delete(member);
 		return true;
-	}
-
-	private List<TeamMember> visibleMembers(
-			List<TeamMember> members,
-			UUID viewerProfileId
-	) {
-		Set<UUID> restrictedUserIds = accountAccessService.findRestrictedUserIds(
-				members.stream().map(TeamMember::getProfile)
-						.filter(profile -> profile.getUser() != null)
-						.map(profile -> profile.getUser().getId())
-						.collect(Collectors.toSet())
-		);
-		Set<UUID> blockedProfileIds = blockedProfileIds(members, viewerProfileId);
-		return members.stream()
-				.filter(member -> member.getProfile().getStatus() == ProfileStatus.ACTIVE)
-				.filter(member -> member.getProfile().getUser() != null)
-				.filter(member -> !restrictedUserIds.contains(
-						member.getProfile().getUser().getId()
-				))
-				.filter(member -> !blockedProfileIds.contains(member.getProfile().getId()))
-				.toList();
-	}
-
-	private Set<UUID> blockedProfileIds(List<TeamMember> members, UUID viewerProfileId) {
-		if (viewerProfileId == null) {
-			return Set.of();
-		}
-		Set<UUID> profileIds = members.stream()
-				.map(member -> member.getProfile().getId())
-				.collect(Collectors.toCollection(HashSet::new));
-		profileIds.add(viewerProfileId);
-		return blockRepository.findAllWithin(profileIds).stream()
-				.filter(block -> viewerProfileId.equals(block.getBlockerProfileId())
-						|| viewerProfileId.equals(block.getBlockedProfileId()))
-				.map(block -> viewerProfileId.equals(block.getBlockerProfileId())
-						? block.getBlockedProfileId() : block.getBlockerProfileId())
-				.collect(Collectors.toSet());
 	}
 
 	private TeamResponse toResponse(Team team, List<TeamMember> members) {
