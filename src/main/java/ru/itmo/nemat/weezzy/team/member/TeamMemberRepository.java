@@ -13,6 +13,11 @@ public interface TeamMemberRepository extends JpaRepository<TeamMember, TeamMemb
 	@EntityGraph(attributePaths = {"profile", "profile.user", "position"})
 	List<TeamMember> findByTeamIdOrderByJoinedAtAscProfileIdAsc(UUID teamId);
 
+	@EntityGraph(attributePaths = {"profile", "profile.user", "position"})
+	List<TeamMember> findByTeamIdInOrderByTeamIdAscJoinedAtAscProfileIdAsc(
+			Collection<UUID> teamIds
+	);
+
 	long countByTeamId(UUID teamId);
 
 	long countByPositionId(UUID positionId);

@@ -10,7 +10,9 @@ import ru.itmo.nemat.weezzy.skill.Skill;
 import ru.itmo.nemat.weezzy.skill.SkillService;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -35,6 +37,13 @@ public class ProfileSkillService {
 		profileSkillRepository.save(profileSkill);
 
 		return skill;
+	}
+
+	@Transactional(readOnly = true)
+	public Set<UUID> findSkillIds(UUID profileId) {
+		profileService.findById(profileId);
+		return profileSkillRepository.findAllByProfileId(profileId).stream()
+				.map(ProfileSkill::getSkillId).collect(Collectors.toSet());
 	}
 
 	@Transactional(readOnly = true)
