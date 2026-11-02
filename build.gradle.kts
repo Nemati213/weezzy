@@ -59,6 +59,7 @@ tasks.withType<Test> {
 	systemProperty("app.outbox.worker.enabled", "false")
 	systemProperty("app.outbox.cleanup.enabled", "false")
 	systemProperty("app.lunch.chat.cleanup.enabled", "false")
+	systemProperty("app.team-recommendation.cleanup.enabled", "false")
 	systemProperty("spring.test.context.cache.maxSize", "8")
 	jvmArgs("-javaagent:${mockitoAgent.asPath}")
 }
