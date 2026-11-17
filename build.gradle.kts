@@ -63,3 +63,20 @@ tasks.withType<Test> {
 	systemProperty("spring.test.context.cache.maxSize", "8")
 	jvmArgs("-javaagent:${mockitoAgent.asPath}")
 }
+
+tasks.test {
+	useJUnitPlatform {
+		excludeTags("volume")
+	}
+}
+
+tasks.register<Test>("volumeTest") {
+	description = "Runs volume checks on a realistic PostgreSQL data set."
+	group = "verification"
+	testClassesDirs = sourceSets.test.get().output.classesDirs
+	classpath = sourceSets.test.get().runtimeClasspath
+	useJUnitPlatform {
+		includeTags("volume")
+	}
+	shouldRunAfter(tasks.test)
+}
