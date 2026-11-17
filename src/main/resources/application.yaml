@@ -52,8 +52,8 @@ app:
     cleanup:
       enabled: ${TEAM_RECOMMENDATION_CLEANUP_ENABLED:true}
       interval: ${TEAM_RECOMMENDATION_CLEANUP_INTERVAL:PT15M}
-      batch-size: ${TEAM_RECOMMENDATION_CLEANUP_BATCH_SIZE:500}
-      max-batches-per-run: ${TEAM_RECOMMENDATION_CLEANUP_MAX_BATCHES_PER_RUN:10}
+      batch-size: ${TEAM_RECOMMENDATION_CLEANUP_BATCH_SIZE:5000}
+      max-batches-per-run: ${TEAM_RECOMMENDATION_CLEANUP_MAX_BATCHES_PER_RUN:20}
   outbox:
     worker:
       enabled: ${OUTBOX_WORKER_ENABLED:true}

@@ -27,8 +27,8 @@ class TeamRecommendationPropertiesTests {
 			assertThat(properties.maxActiveSessionsPerUser()).isEqualTo(10);
 			assertThat(properties.cleanup().enabled()).isTrue();
 			assertThat(properties.cleanup().interval()).isEqualTo(Duration.ofMinutes(15));
-			assertThat(properties.cleanup().batchSize()).isEqualTo(500);
-			assertThat(properties.cleanup().maxBatchesPerRun()).isEqualTo(10);
+			assertThat(properties.cleanup().batchSize()).isEqualTo(5000);
+			assertThat(properties.cleanup().maxBatchesPerRun()).isEqualTo(20);
 		});
 	}
 

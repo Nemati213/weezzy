@@ -27,13 +27,17 @@ public class TeamRecommendationCleanupRepository {
 
 	public int deleteEntries(List<UUID> sessionIds, int batchSize) {
 		return jdbc.update("""
-				DELETE FROM team_recommendation_entries entry
-				USING (
-				    SELECT id FROM team_recommendation_entries
-				    WHERE session_id IN (:sessionIds) ORDER BY session_id, ordinal
-				    LIMIT :batchSize FOR UPDATE SKIP LOCKED
-				) expired
-				WHERE entry.id = expired.id
+				DELETE FROM team_recommendation_entries
+				WHERE ctid = ANY (ARRAY(
+				    SELECT candidate.ctid
+				    FROM unnest(ARRAY[:sessionIds]::uuid[]) AS session(id)
+				    CROSS JOIN LATERAL (
+				        SELECT ctid FROM team_recommendation_entries
+				        WHERE session_id = session.id ORDER BY ordinal
+				        LIMIT :batchSize FOR UPDATE SKIP LOCKED
+				    ) candidate
+				    LIMIT :batchSize
+				))
 				""", Map.of("sessionIds", sessionIds, "batchSize", batchSize));
 	}
 

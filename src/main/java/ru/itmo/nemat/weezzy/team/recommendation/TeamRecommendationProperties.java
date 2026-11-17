@@ -39,8 +39,8 @@ public record TeamRecommendationProperties(
 	public record Cleanup(
 			@DefaultValue("true") boolean enabled,
 			@NotNull @DefaultValue("15m") Duration interval,
-			@Positive @DefaultValue("500") int batchSize,
-			@Positive @DefaultValue("10") int maxBatchesPerRun
+			@Positive @DefaultValue("5000") int batchSize,
+			@Positive @DefaultValue("20") int maxBatchesPerRun
 	) {
 		@AssertTrue(message = "recommendation cleanup interval must be positive")
 		public boolean isIntervalPositive() {
